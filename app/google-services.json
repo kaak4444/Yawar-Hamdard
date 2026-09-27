@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "19272626619",
+    "project_id": "yawar-hamdard",
+    "storage_bucket": "yawar-hamdard.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:19272626619:android:5470cc06d12ab267f5d49e",
+        "android_client_info": {
+          "package_name": "com.aistudio.yawarhamdard.care"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCdq2D7LAM1LS0I361SVACqhEo26mxVtbk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
