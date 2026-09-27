@@ -1,6 +1,7 @@
 package com.example.ui.admin
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,7 +71,6 @@ import com.example.ui.theme.YawarNavy
 import com.example.ui.theme.AmberText
 import com.example.ui.theme.DangerBg
 import com.example.ui.theme.DangerText
-import com.example.ui.theme.OnNavyMuted
 import com.example.ui.theme.WarningAmberBg
 import com.example.ui.viewmodel.YawarViewModel
 
@@ -98,7 +98,8 @@ fun AdminDashboardScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(YawarNavy)
+                .background(Color.White)
+                .border(1.dp, BorderColor)
                 .padding(16.dp)
         ) {
             Column {
@@ -111,7 +112,7 @@ fun AdminDashboardScreen(
                         Icon(
                             imageVector = Icons.Default.AdminPanelSettings,
                             contentDescription = "Console",
-                            tint = Color.White,
+                            tint = YawarBlue,
                             modifier = Modifier.size(24.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -119,7 +120,7 @@ fun AdminDashboardScreen(
                             text = "YHCS Operations Console",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
+                                color = Ink,
                                 fontSize = 16.sp
                             )
                         )
@@ -128,17 +129,17 @@ fun AdminDashboardScreen(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(ClinicalGreen)
+                            .background(PaleBlue)
                             .padding(horizontal = 8.dp, vertical = 2.dp)
                     ) {
-                        Text("24/7 Operations Desk", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("24/7 Operations Desk", color = YawarBlue, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = "Coordination Desk: +93 707 438 303 • callcenter@yawarconsulting.com",
-                    color = OnNavyMuted,
+                    color = Slate,
                     fontSize = 11.sp
                 )
             }

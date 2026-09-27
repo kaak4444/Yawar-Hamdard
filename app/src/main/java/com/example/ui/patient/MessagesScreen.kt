@@ -363,7 +363,7 @@ fun ConversationListView(
                     Text(
                         text = "Lock-screen privacy active: Medical diagnoses & lab reports hidden from lock screen notifications.",
                         fontSize = 11.sp,
-                        color = Color(0xFF1E3A8A),
+                        color = YawarBlue,
                         lineHeight = 15.sp
                     )
                 }
@@ -989,13 +989,13 @@ fun DocumentBubbleContent(
                     modifier = Modifier
                         .size(34.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(YawarNavy),
+                        .background(PaleBlue),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.AttachFile,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = YawarBlue,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -1154,12 +1154,12 @@ fun ChatComposer(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
-                            .background(YawarNavy)
+                            .background(PaleBlue)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Mic,
                             contentDescription = "Record Voice Note",
-                            tint = Color.White,
+                            tint = YawarBlue,
                             modifier = Modifier.size(20.dp)
                         )
                     }

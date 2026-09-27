@@ -83,7 +83,6 @@ import com.example.ui.theme.PaleGreen
 import com.example.ui.theme.Slate
 import com.example.ui.theme.YawarBlue
 import com.example.ui.theme.YawarNavy
-import com.example.ui.theme.YawarNavyDark
 import com.example.ui.theme.SlateSoft
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -163,10 +162,10 @@ fun AuthOnboardingScreen(
                         Box(
                             modifier = Modifier
                                 .clip(MaterialTheme.shapes.small)
-                                .background(if (isSelected) YawarNavy else Color.White)
+                                .background(if (isSelected) PaleBlue else Color.White)
                                 .border(
                                     1.dp,
-                                    if (isSelected) YawarNavy else BorderColor,
+                                    if (isSelected) YawarBlue else BorderColor,
                                     MaterialTheme.shapes.small
                                 )
                                 .clickable { onLanguageSelected(lang) }
@@ -179,7 +178,7 @@ fun AuthOnboardingScreen(
                                     AppLanguage.DARI -> "دری"
                                     AppLanguage.PASHTO -> "پښتو"
                                 },
-                                color = if (isSelected) Color.White else Ink,
+                                color = if (isSelected) YawarBlue else Ink,
                                 fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                             )
@@ -497,13 +496,13 @@ fun AuthOnboardingScreen(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(YawarNavy),
+                            .background(PaleBlue),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Phone,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = YawarBlue,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -545,8 +544,8 @@ private fun CloudflareTurnstileWidget(
             .clip(MaterialTheme.shapes.small)
             .clickable(enabled = !isVerified && !isVerifying) { onTrigger() },
         shape = MaterialTheme.shapes.small,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF9FAFB)),
-        border = BorderStroke(1.dp, if (isVerified) Color(0xFF10B981) else Color(0xFFD1D5DB)),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, if (isVerified) YawarBlueLight else BorderColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Row(
@@ -567,7 +566,7 @@ private fun CloudflareTurnstileWidget(
                         .clip(RoundedCornerShape(6.dp))
                         .background(
                             when {
-                                isVerified -> Color(0xFF10B981)
+                                isVerified -> YawarBlue
                                 isVerifying -> Color(0xFFE5E7EB)
                                 else -> Color.White
                             }
@@ -575,9 +574,9 @@ private fun CloudflareTurnstileWidget(
                         .border(
                             1.5.dp,
                             when {
-                                isVerified -> Color(0xFF10B981)
-                                isVerifying -> Color(0xFF9CA3AF)
-                                else -> Color(0xFF9CA3AF)
+                                isVerified -> YawarBlue
+                                isVerifying -> BorderColor
+                                else -> BorderColor
                             },
                             RoundedCornerShape(6.dp)
                         ),
@@ -615,7 +614,7 @@ private fun CloudflareTurnstileWidget(
                             else -> "Verify you are human"
                         },
                         fontWeight = if (isVerified) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (isVerified) Color(0xFF047857) else Ink,
+                        color = if (isVerified) YawarBlue else Ink,
                         fontSize = 14.sp
                     )
                     Text(
@@ -643,7 +642,7 @@ private fun CloudflareTurnstileWidget(
                         text = "CLOUDFLARE",
                         fontWeight = FontWeight.Black,
                         fontSize = 11.sp,
-                        color = Color(0xFF1F2937),
+                        color = Ink,
                         letterSpacing = 0.5.sp
                     )
                 }

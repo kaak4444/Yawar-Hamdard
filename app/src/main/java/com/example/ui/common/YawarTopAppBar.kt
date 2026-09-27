@@ -37,7 +37,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -47,10 +46,11 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.AppLanguage
 import com.example.data.model.UserRole
 import com.example.ui.theme.ClinicalGreen
+import com.example.ui.theme.BorderColor
 import com.example.ui.theme.YawarNavy
-import com.example.ui.theme.YawarNavyDark
+import com.example.ui.theme.PaleBlue
+import com.example.ui.theme.YawarBlue
 import com.example.ui.theme.DangerText
-import com.example.ui.theme.OnNavyWarning
 
 @Composable
 fun YawarTopAppBar(
@@ -68,11 +68,8 @@ fun YawarTopAppBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(YawarNavyDark, YawarNavy)
-                )
-            )
+            .background(Color.White)
+            .border(1.dp, BorderColor)
             .statusBarsPadding()
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
@@ -101,7 +98,7 @@ fun YawarTopAppBar(
                     Icon(
                         imageVector = Icons.Default.WifiOff,
                         contentDescription = "Low-Bandwidth Mode",
-                        tint = OnNavyWarning,
+                        tint = YawarBlue,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -116,8 +113,8 @@ fun YawarTopAppBar(
                     Row(
                         modifier = Modifier
                             .clip(MaterialTheme.shapes.large)
-                            .background(Color.White.copy(alpha = 0.15f))
-                            .border(1.dp, Color.White.copy(alpha = 0.25f), MaterialTheme.shapes.large)
+                            .background(PaleBlue)
+                            .border(1.dp, BorderColor, MaterialTheme.shapes.large)
                             .clickable { roleMenuExpanded = true }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -130,20 +127,20 @@ fun YawarTopAppBar(
                         Icon(
                             imageVector = roleIcon,
                             contentDescription = currentRole.displayName,
-                            tint = Color.White,
+                            tint = YawarBlue,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = currentRole.displayName,
-                            color = Color.White,
+                            color = YawarNavy,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
                         Icon(
                             imageVector = Icons.Default.ArrowDropDown,
                             contentDescription = "Switch Role",
-                            tint = Color.White,
+                            tint = YawarBlue,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -199,7 +196,8 @@ fun YawarTopAppBar(
                     Box(
                         modifier = Modifier
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.15f))
+                            .background(PaleBlue)
+                            .border(1.dp, BorderColor, CircleShape)
                             .clickable { langMenuExpanded = true }
                             .padding(6.dp),
                         contentAlignment = Alignment.Center
@@ -208,7 +206,7 @@ fun YawarTopAppBar(
                             Icon(
                                 imageVector = Icons.Default.Language,
                                 contentDescription = "Select Language",
-                                tint = Color.White,
+                                tint = YawarBlue,
                                 modifier = Modifier.size(18.dp)
                             )
                         }

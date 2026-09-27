@@ -84,7 +84,6 @@ import com.example.ui.theme.PaleGreen
 import com.example.ui.theme.Slate
 import com.example.ui.theme.YawarBlue
 import com.example.ui.theme.YawarNavy
-import com.example.ui.theme.YawarNavyDark
 import com.example.ui.theme.YawarSpacing
 import com.example.ui.theme.DangerBg
 import com.example.ui.theme.DangerText
@@ -108,6 +107,7 @@ fun PatientHomeScreen(
     val facilities by viewModel.filteredFacilities.collectAsState()
     val profile by viewModel.userProfile.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
+    val sampleBimaIds = listOf("BIMA-26-0001", "BIMA-26-0002", "BIMA-26-0003", "BIMA-26-0004")
 
     val context = LocalContext.current
 
@@ -121,6 +121,71 @@ fun PatientHomeScreen(
         item {
             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                 EmergencyCard(language = language)
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = MaterialTheme.shapes.medium,
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = BorderStroke(1.dp, BorderColor)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Bima Insurance IDs",
+                            color = Ink,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Text(
+                            text = "SAMPLE",
+                            color = YawarBlue,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp,
+                            modifier = Modifier
+                                .clip(MaterialTheme.shapes.extraSmall)
+                                .background(PaleBlue)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                    Text(
+                        text = "Example IDs only — use registered member details for real coverage.",
+                        color = Slate,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+                    )
+                    sampleBimaIds.chunked(2).forEach { idRow ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            idRow.forEach { bimaId ->
+                                Text(
+                                    text = bimaId,
+                                    color = YawarBlue,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(MaterialTheme.shapes.extraSmall)
+                                        .background(PaleBlue)
+                                        .padding(horizontal = 10.dp, vertical = 9.dp)
+                                )
+                            }
+                        }
+                        if (idRow != sampleBimaIds.take(2)) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
             }
         }
 
@@ -195,21 +260,22 @@ fun PatientHomeScreen(
             }
         }
 
-        // 5. BLUE BACKGROUND TAB UNDER QUICK ACTIONS
+        // 5. Light partner-care card with a small blue accent
         item {
             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                    colors = CardDefaults.cardColors(containerColor = YawarBlue),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, BorderColor),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Box(modifier = Modifier.fillMaxWidth()) {
                         // Decorative background icon
                         Icon(
                             imageVector = Icons.Default.HealthAndSafety,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.05f),
+                            tint = YawarBlue.copy(alpha = 0.06f),
                             modifier = Modifier
                                 .size(180.dp)
                                 .align(Alignment.CenterEnd)
@@ -231,13 +297,13 @@ fun PatientHomeScreen(
                                         modifier = Modifier
                                             .size(38.dp)
                                             .clip(CircleShape)
-                                            .background(Color.White.copy(alpha = 0.2f)),
+                                            .background(PaleBlue),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.HealthAndSafety,
                                             contentDescription = null,
-                                            tint = Color.White,
+                                            tint = YawarBlue,
                                             modifier = Modifier.size(22.dp)
                                         )
                                     }
@@ -246,12 +312,12 @@ fun PatientHomeScreen(
                                         Text(
                                             text = "Core Coordination Desk",
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.White,
+                                            color = Ink,
                                             fontSize = 16.sp
                                         )
                                         Text(
                                             text = "Active YHCS Corporate Coverage",
-                                            color = Color.White.copy(alpha = 0.85f),
+                                            color = Slate,
                                             fontSize = 12.sp
                                         )
                                     }
@@ -260,12 +326,12 @@ fun PatientHomeScreen(
                                 Box(
                                     modifier = Modifier
                                         .clip(MaterialTheme.shapes.extraSmall)
-                                        .background(ClinicalGreen)
+                                        .background(PaleBlue)
                                         .padding(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
                                     Text(
                                         text = "VERIFIED",
-                                        color = Color.White,
+                                        color = YawarBlue,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.ExtraBold
                                     )
@@ -276,7 +342,7 @@ fun PatientHomeScreen(
 
                             Text(
                                 text = "Direct access to top medical specialists, cashless inpatient admissions, and 24/7 care coordination throughout Afghanistan.",
-                                color = Color.White.copy(alpha = 0.95f),
+                                color = Slate,
                                 fontSize = 13.sp,
                                 lineHeight = 19.sp,
                                 fontWeight = FontWeight.Medium
@@ -291,8 +357,8 @@ fun PatientHomeScreen(
                                 Button(
                                     onClick = onOpenBooking,
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.surface,
-                                        contentColor = YawarBlue
+                                        containerColor = YawarBlue,
+                                        contentColor = Color.White
                                     ),
                                     shape = MaterialTheme.shapes.small,
                                     modifier = Modifier.weight(1.2f)
@@ -310,9 +376,9 @@ fun PatientHomeScreen(
                                         context.startActivity(callIntent)
                                     },
                                     colors = ButtonDefaults.outlinedButtonColors(
-                                        contentColor = Color.White
+                                        contentColor = YawarBlue
                                     ),
-                                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White),
+                                    border = BorderStroke(1.5.dp, YawarBlue),
                                     shape = MaterialTheme.shapes.small,
                                     modifier = Modifier.weight(1f)
                                 ) {

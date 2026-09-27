@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +24,7 @@ import com.example.ui.theme.ChatBubbleIn
 import com.example.ui.theme.ChatBubbleOut
 import com.example.ui.theme.ChatCanvas
 import com.example.ui.theme.Ink
+import com.example.ui.theme.YawarBlue
 
 /**
  * Scatters a faint, deterministic doodle over the chat canvas. The wallpaper is
@@ -32,7 +32,7 @@ import com.example.ui.theme.Ink
  * box instead. Drawn under the messages rather than as an asset so it scales to
  * any thread length and needs no new drawable.
  */
-fun Modifier.chatDoodleWallpaper(tint: Color = Color.Black): Modifier = drawBehind {
+fun Modifier.chatDoodleWallpaper(tint: Color = YawarBlue): Modifier = drawBehind {
     val step = 74f
     val mark = tint.copy(alpha = 0.045f)
     var row = 0
@@ -92,21 +92,11 @@ private val ChatLight = ChatPalette(
     bubbleOut = ChatBubbleOut,
     bubbleBorder = BorderColor,
     bubbleText = Ink,
-    wallpaperTint = Color.Black
-)
-
-private val ChatDark = ChatPalette(
-    canvas = Color(0xFF0B141F),
-    bubbleIn = Color(0xFF202C39),
-    bubbleOut = Color(0xFF005C5B),
-    bubbleBorder = Color(0xFF2A3945),
-    bubbleText = Color(0xFFE9EDEF),
-    wallpaperTint = Color.White
+    wallpaperTint = YawarBlue
 )
 
 @Composable
-fun rememberChatPalette(): ChatPalette =
-    if (isSystemInDarkTheme()) ChatDark else ChatLight
+fun rememberChatPalette(): ChatPalette = ChatLight
 
 /** Floating date pill that separates stretches of a conversation. */
 @Composable

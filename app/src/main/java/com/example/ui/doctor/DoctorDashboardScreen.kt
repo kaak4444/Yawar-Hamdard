@@ -1,6 +1,7 @@
 package com.example.ui.doctor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,7 +77,6 @@ import com.example.ui.theme.YawarBlue
 import com.example.ui.theme.YawarNavy
 import com.example.ui.theme.ChipBg
 import com.example.ui.theme.DangerBg
-import com.example.ui.theme.OnNavyMuted
 import com.example.ui.viewmodel.YawarViewModel
 
 @Composable
@@ -107,7 +107,8 @@ fun DoctorDashboardScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(YawarNavy)
+                .background(Color.White)
+                .border(1.dp, BorderColor)
                 .padding(16.dp)
         ) {
             Row(
@@ -117,13 +118,13 @@ fun DoctorDashboardScreen(
                     modifier = Modifier
                         .size(50.dp)
                         .clip(CircleShape)
-                        .background(PaleGreen),
+                        .background(PaleBlue),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.LocalHospital,
                         contentDescription = "Doctor Icon",
-                        tint = DeepGreen,
+                        tint = YawarBlue,
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -136,7 +137,7 @@ fun DoctorDashboardScreen(
                             text = activeDoctor?.name ?: "Dr. Abdul Wasi Momand",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White,
+                                color = Ink,
                                 fontSize = 16.sp
                             )
                         )
@@ -151,7 +152,7 @@ fun DoctorDashboardScreen(
                     Text(
                         text = "${activeDoctor?.specialty ?: "Sonology"} • ${activeDoctor?.hospitalAffiliation ?: "Al-Hayat Hospital"} • Lic: ${activeDoctor?.licenseNo ?: "MoPH-AF-KBL-2016-1042"}",
                         style = MaterialTheme.typography.bodySmall.copy(
-                            color = OnNavyMuted,
+                            color = Slate,
                             fontSize = 11.sp
                         )
                     )
