@@ -54,14 +54,17 @@ object VerifiedImageResources {
     }
 
     /**
-     * Maps hospital entity IDs or legacy filenames to local packaged logos.
-     * Note: Missing Blossom logo intentionally returns null to display a neutral text placeholder.
+     * Maps hospital entity IDs or legacy filenames to official local partner logos.
+     * Facilities without a confirmed logo return null and display a neutral text placeholder.
      */
     @DrawableRes
     fun hospital(hospitalId: String): Int? {
         val clean = hospitalId.lowercase().trim()
-        // Missing Blossom logo uses a neutral text placeholder, not a fabricated logo.
-        if (clean == "hosp_16" || clean.contains("blossom")) {
+        // No verified logos are available for these four facilities.
+        if (clean in setOf("hosp_07", "hosp_14", "hosp_16", "hosp_17") ||
+            clean.contains("ettemaad") || clean.contains("timar") ||
+            clean.contains("blossom") || clean.contains("sarwari")
+        ) {
             return null
         }
 
