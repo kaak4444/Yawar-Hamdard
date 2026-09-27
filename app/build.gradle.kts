@@ -105,7 +105,6 @@ dependencies {
   // implementation(libs.firebase.firestore)
 
   // Credential Manager dependencies are optional and are not used for email/password auth.
-  implementation(libs.firebase.auth)
   // implementation(libs.androidx.credentials)
   // implementation(libs.androidx.credentials.play.services)
   // implementation(libs.googleid)

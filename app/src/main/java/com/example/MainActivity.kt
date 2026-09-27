@@ -79,6 +79,8 @@ class MainActivity : ComponentActivity() {
                 val authLoading by viewModel.authLoading.collectAsState()
                 val authError by viewModel.authError.collectAsState()
                 val authNotice by viewModel.authNotice.collectAsState()
+                val emailVerificationPending by viewModel.emailVerificationPending.collectAsState()
+                val passwordResetPending by viewModel.passwordResetPending.collectAsState()
                 val currentLanguage by viewModel.currentLanguage.collectAsState()
                 val lowBandwidth by viewModel.lowBandwidthMode.collectAsState()
                 val snackbarMessage by viewModel.snackbarMessage.collectAsState()
@@ -115,6 +117,12 @@ class MainActivity : ComponentActivity() {
                             onSignIn = viewModel::signIn,
                             onSignUp = viewModel::signUp,
                             onPasswordReset = viewModel::sendPasswordReset,
+                            emailVerificationPending = emailVerificationPending,
+                            passwordResetPending = passwordResetPending,
+                            onVerifyEmailCode = viewModel::verifySignUpCode,
+                            onResendEmailCode = viewModel::resendSignUpCode,
+                            onFinishPasswordReset = viewModel::finishPasswordReset,
+                            onCancelCodeFlow = viewModel::cancelEmailCodeFlow,
                             isLoading = authLoading,
                             errorMessage = authError,
                             noticeMessage = authNotice

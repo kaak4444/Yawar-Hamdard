@@ -1,0 +1,10 @@
+Options -Indexes
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+<Files "auth-config.php">
+    Require all denied
+</Files>
+
+<FilesMatch "\.(sql|md|json|lock)$">
+    Require all denied
+</FilesMatch>

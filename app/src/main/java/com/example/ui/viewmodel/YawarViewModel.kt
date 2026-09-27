@@ -1,11 +1,16 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
-import com.google.firebase.FirebaseApp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.auth.AuthApiException
+import com.example.data.auth.AuthTokenStore
+import com.example.data.auth.CodeRequest
+import com.example.data.auth.CredentialsRequest
+import com.example.data.auth.EmailRequest
+import com.example.data.auth.HostingerAuthApi
+import com.example.data.auth.PasswordResetRequest
+import com.example.data.auth.requireSuccessfulBody
 import com.example.data.local.AppointmentEntity
 import com.example.data.local.ClaimEntity
 import com.example.data.local.CoordinationCaseEntity
@@ -28,7 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.random.Random
 
 data class BookingDraft(
@@ -54,29 +61,25 @@ data class BookingDraft(
 class YawarViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: YawarRepository
+    private val authApi = HostingerAuthApi.create()
+    private val authTokenStore = AuthTokenStore(application)
 
     // Role & Language State
-    private val firebaseAuth = FirebaseApp.getApps(application).firstOrNull()?.let {
-        FirebaseAuth.getInstance(it)
-    }
     private val _authLoading = MutableStateFlow(false)
     val authLoading: StateFlow<Boolean> = _authLoading.asStateFlow()
     private val _authError = MutableStateFlow<String?>(null)
     val authError: StateFlow<String?> = _authError.asStateFlow()
     private val _authNotice = MutableStateFlow<String?>(null)
     val authNotice: StateFlow<String?> = _authNotice.asStateFlow()
+    private val _emailVerificationPending = MutableStateFlow(false)
+    val emailVerificationPending: StateFlow<Boolean> = _emailVerificationPending.asStateFlow()
+    private val _passwordResetPending = MutableStateFlow(false)
+    val passwordResetPending: StateFlow<Boolean> = _passwordResetPending.asStateFlow()
     private val _isUserLoggedIn = MutableStateFlow(false)
     val isUserLoggedIn: StateFlow<Boolean> = _isUserLoggedIn.asStateFlow()
 
     private val _currentRole = MutableStateFlow(UserRole.PATIENT)
     val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
-
-    private val authStateListener = FirebaseAuth.AuthStateListener { auth ->
-        auth.currentUser?.let(::activateVerifiedAccount) ?: run {
-            _isUserLoggedIn.value = false
-            _currentRole.value = UserRole.PATIENT
-        }
-    }
 
     init {
         val database = YawarDatabase.getDatabase(application)
@@ -84,107 +87,134 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.checkAndSeedDatabase()
         }
-        firebaseAuth?.addAuthStateListener(authStateListener)
+        restoreHostingerSession()
     }
 
     fun signIn(email: String, password: String) {
-        val auth = firebaseAuth ?: return setAuthError("Firebase is not configured for this app yet. Add app/google-services.json and enable Email/Password sign-in in Firebase.")
         if (email.isBlank() || password.isBlank()) return setAuthError("Enter your email and password.")
-        _authLoading.value = true
-        clearAuthFeedback()
-        auth.signInWithEmailAndPassword(email.trim(), password)
-            .addOnCompleteListener { task ->
-                if (!task.isSuccessful) {
-                    _authLoading.value = false
-                    setAuthError("Email or password is incorrect, or the account needs attention.")
-                    return@addOnCompleteListener
-                }
-                val user = auth.currentUser
-                if (user == null) {
-                    _authLoading.value = false
-                    setAuthError("Could not load the signed-in account.")
-                    return@addOnCompleteListener
-                }
-                user.reload().addOnCompleteListener {
-                    _authLoading.value = false
-                    if (it.isSuccessful && user.isEmailVerified) {
-                        activateVerifiedAccount(user)
-                    } else if (!it.isSuccessful) {
-                        auth.signOut()
-                        setAuthError("Could not verify the account status. Check your connection and try again.")
-                    } else {
-                        auth.signOut()
-                        _authNotice.value = "Check your email and verify your address before signing in."
-                    }
-                }
-            }
+        performAuth {
+            val response = authApi.signIn(CredentialsRequest(normalizeEmail(email), password))
+            acceptSession(response.requireSuccessfulBody())
+        }
     }
 
     fun signUp(email: String, password: String) {
-        val auth = firebaseAuth ?: return setAuthError("Firebase is not configured for this app yet. Add app/google-services.json and enable Email/Password sign-in in Firebase.")
         if (email.isBlank() || !email.contains('@')) return setAuthError("Enter a valid email address.")
-        if (password.length < 8) return setAuthError("Use a password with at least 8 characters.")
-        _authLoading.value = true
-        clearAuthFeedback()
-        auth.createUserWithEmailAndPassword(email.trim(), password)
-            .addOnCompleteListener { task ->
-                if (!task.isSuccessful) {
-                    _authLoading.value = false
-                    setAuthError("Could not create the account. Check the details or try signing in.")
-                    return@addOnCompleteListener
-                }
-                val user = task.result?.user
-                if (user == null) {
-                    _authLoading.value = false
-                    setAuthError("Could not create the account. Check the details or try signing in.")
-                    return@addOnCompleteListener
-                }
-                user.sendEmailVerification().addOnCompleteListener { verification ->
-                    _authLoading.value = false
-                    auth.signOut()
-                    if (verification.isSuccessful) {
-                        _authNotice.value = "Account created. Check your email for the verification link, then sign in."
-                    } else {
-                        setAuthError(verification.exception?.localizedMessage ?: "Account created, but the verification email could not be sent. Try signing in and resend it.")
-                    }
-                }
-            }
+        if (password.length < 12) return setAuthError("Use a password with at least 12 characters.")
+        performAuth {
+            val response = authApi.signUp(CredentialsRequest(normalizeEmail(email), password))
+            val result = response.requireSuccessfulBody()
+            _emailVerificationPending.value = true
+            _passwordResetPending.value = false
+            _authNotice.value = result.message ?: "If the account can be registered, a six-digit verification code has been sent."
+        }
+    }
+
+    fun verifySignUpCode(email: String, code: String) {
+        if (code.length != 6 || code.any { !it.isDigit() }) return setAuthError("Enter the six-digit code from your email.")
+        performAuth {
+            val response = authApi.verifySignUp(CodeRequest(normalizeEmail(email), code))
+            acceptSession(response.requireSuccessfulBody())
+            _emailVerificationPending.value = false
+        }
+    }
+
+    fun resendSignUpCode(email: String) {
+        performAuth {
+            val response = authApi.resendSignUpCode(EmailRequest(normalizeEmail(email)))
+            val result = response.requireSuccessfulBody()
+            _authNotice.value = result.message ?: "If the account is awaiting verification, a code has been sent."
+            _emailVerificationPending.value = true
+            _passwordResetPending.value = false
+        }
     }
 
     fun sendPasswordReset(email: String) {
-        val auth = firebaseAuth ?: return setAuthError("Firebase is not configured for this app yet. Add app/google-services.json and enable Email/Password sign-in in Firebase.")
         if (email.isBlank() || !email.contains('@')) return setAuthError("Enter the email address for your account.")
-        _authLoading.value = true
-        clearAuthFeedback()
-        auth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { task ->
-            _authLoading.value = false
-            // Same message either way, so the screen does not reveal whether an email is registered.
-            _authNotice.value = "If an account exists for that email, a password reset link has been sent."
+        performAuth {
+            val response = authApi.startPasswordReset(EmailRequest(normalizeEmail(email)))
+            val result = response.requireSuccessfulBody()
+            _emailVerificationPending.value = false
+            _passwordResetPending.value = true
+            _authNotice.value = result.message ?: "If an account exists for that address, a password reset code has been sent."
         }
     }
 
-    private fun activateVerifiedAccount(user: FirebaseUser) {
-        if (!user.isEmailVerified) {
-            _isUserLoggedIn.value = false
-            _currentRole.value = UserRole.PATIENT
-            return
-        }
-        user.getIdToken(false).addOnSuccessListener { token ->
-            val role = when (token.claims["role"] as? String) {
-                "doctor" -> UserRole.DOCTOR
-                "admin" -> UserRole.ADMIN
-                else -> UserRole.PATIENT
-            }
-            _currentRole.value = role
-            _isUserLoggedIn.value = true
-            _authLoading.value = false
-            clearAuthFeedback()
-        }.addOnFailureListener { error ->
-            _authLoading.value = false
-            setAuthError(error.localizedMessage ?: "Could not verify account permissions.")
-            _isUserLoggedIn.value = false
+    fun finishPasswordReset(email: String, code: String, newPassword: String) {
+        if (code.length != 6 || code.any { !it.isDigit() }) return setAuthError("Enter the six-digit code from your email.")
+        if (newPassword.length < 12) return setAuthError("Use a new password with at least 12 characters.")
+        performAuth {
+            val response = authApi.resetPassword(
+                PasswordResetRequest(normalizeEmail(email), code, newPassword)
+            )
+            val result = response.requireSuccessfulBody()
+            _passwordResetPending.value = false
+            _authNotice.value = result.message ?: "Your password has been changed. Sign in with the new password."
         }
     }
+
+    fun cancelEmailCodeFlow() {
+        _emailVerificationPending.value = false
+        _passwordResetPending.value = false
+        clearAuthFeedback()
+    }
+
+    private fun restoreHostingerSession() {
+        val token = authTokenStore.read() ?: return
+        _authLoading.value = true
+        viewModelScope.launch {
+            try {
+                val response = authApi.currentUser("Bearer $token")
+                val result = response.requireSuccessfulBody()
+                applyUser(result.user)
+                _authLoading.value = false
+            } catch (error: Exception) {
+                _authLoading.value = false
+                if (error is CancellationException) throw error
+                if (error is AuthApiException && error.statusCode in 400..403) {
+                    authTokenStore.clear()
+                } else {
+                    setAuthError("Could not reconnect to your saved account. Sign in again when you have a connection.")
+                }
+            }
+        }
+    }
+
+    private fun performAuth(action: suspend () -> Unit) {
+        _authLoading.value = true
+        clearAuthFeedback()
+        viewModelScope.launch {
+            try {
+                action()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                val message = if (error is AuthApiException) error.message else
+                    "Could not reach the sign-in service. Check your connection and try again."
+                setAuthError(message ?: "The request could not be completed. Please try again.")
+            } finally {
+                _authLoading.value = false
+            }
+        }
+    }
+
+    private fun acceptSession(result: com.example.data.auth.AuthApiResult) {
+        val token = result.token ?: throw IllegalStateException("The server did not return a session token.")
+        authTokenStore.write(token)
+        applyUser(result.user)
+        clearAuthFeedback()
+    }
+
+    private fun applyUser(user: com.example.data.auth.AuthApiUser?) {
+        val role = when (user?.role?.lowercase(Locale.ROOT)) {
+            "doctor" -> UserRole.DOCTOR
+            "admin" -> UserRole.ADMIN
+            else -> UserRole.PATIENT
+        }
+        _currentRole.value = role
+        _isUserLoggedIn.value = user != null
+    }
+
+    private fun normalizeEmail(email: String): String = email.trim().lowercase(Locale.ROOT)
 
     private fun setAuthError(message: String) { _authError.value = message }
     private fun clearAuthFeedback() { _authError.value = null; _authNotice.value = null }
@@ -192,9 +222,17 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     fun clearAuthError() { _authError.value = null }
 
     fun logout() {
-        firebaseAuth?.signOut()
+        val token = authTokenStore.read()
+        authTokenStore.clear()
         _isUserLoggedIn.value = false
         _currentRole.value = UserRole.PATIENT
+        _emailVerificationPending.value = false
+        _passwordResetPending.value = false
+        if (token != null) {
+            viewModelScope.launch {
+                runCatching { authApi.signOut("Bearer $token") }
+            }
+        }
     }
 
     private val _currentLanguage = MutableStateFlow(AppLanguage.ENGLISH)

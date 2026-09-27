@@ -8,6 +8,9 @@ local.properties
 .env
 .env.*
 !.env.example
+backend/hostinger-auth/api/auth-config.php
+backend/hostinger-auth/auth-config.php
+backend/hostinger-auth/.private/auth-config.php
 *.jks
 *.keystore
 

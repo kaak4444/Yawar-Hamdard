@@ -90,6 +90,12 @@ fun AuthOnboardingScreen(
     onSignIn: (String, String) -> Unit,
     onSignUp: (String, String) -> Unit,
     onPasswordReset: (String) -> Unit,
+    emailVerificationPending: Boolean,
+    passwordResetPending: Boolean,
+    onVerifyEmailCode: (String, String) -> Unit,
+    onResendEmailCode: (String) -> Unit,
+    onFinishPasswordReset: (String, String, String) -> Unit,
+    onCancelCodeFlow: () -> Unit,
     isLoading: Boolean,
     errorMessage: String?,
     noticeMessage: String?,
@@ -99,6 +105,9 @@ fun AuthOnboardingScreen(
     var password by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
     var isCreateAccount by remember { mutableStateOf(false) }
+    var emailCode by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    val isCodeFlow = emailVerificationPending || passwordResetPending
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -253,7 +262,12 @@ fun AuthOnboardingScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = if (isCreateAccount) "Create a Patient Account" else "Patient Portal Access",
+                            text = when {
+                                emailVerificationPending -> "Verify your email address"
+                                passwordResetPending -> "Reset your password"
+                                isCreateAccount -> "Create a Patient Account"
+                                else -> "Patient Portal Access"
+                            },
                             fontWeight = FontWeight.Bold,
                             color = YawarNavy,
                             fontSize = 14.sp
@@ -265,7 +279,11 @@ fun AuthOnboardingScreen(
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "EMAIL VERIFIED",
+                                text = when {
+                                    emailVerificationPending -> "VERIFY EMAIL"
+                                    passwordResetPending -> "RESET CODE"
+                                    else -> "EMAIL SIGN-IN"
+                                },
                                 color = ClinicalGreen,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -275,7 +293,7 @@ fun AuthOnboardingScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Firebase email/password account
+                    // Hostinger-backed account email
                     OutlinedTextField(
                         value = email,
                         onValueChange = { email = it },
@@ -289,7 +307,7 @@ fun AuthOnboardingScreen(
                             )
                         },
                         singleLine = true,
-                        enabled = !isLoading,
+                        enabled = !isLoading && !isCodeFlow,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
                         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (isCreateAccount) onSignUp(email, password) else onSignIn(email, password) }),
                         modifier = Modifier.fillMaxWidth(),
@@ -302,38 +320,90 @@ fun AuthOnboardingScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password (at least 8 characters)") },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = YawarNavy,
-                                modifier = Modifier.size(18.dp)
+                    if (isCodeFlow) {
+                        Text(
+                            text = if (emailVerificationPending)
+                                "Enter the six-digit code sent from no-reply@yawarconsulting.com."
+                            else
+                                "Enter the six-digit code sent to your email address.",
+                            color = Slate,
+                            fontSize = 12.sp,
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                        )
+                        OutlinedTextField(
+                            value = emailCode,
+                            onValueChange = { value -> emailCode = value.filter(Char::isDigit).take(6) },
+                            label = { Text("Six-digit email code") },
+                            leadingIcon = {
+                                Icon(Icons.Default.Lock, contentDescription = null, tint = YawarNavy, modifier = Modifier.size(18.dp))
+                            },
+                            singleLine = true,
+                            enabled = !isLoading,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = YawarBlue,
+                                unfocusedBorderColor = BorderColor
                             )
-                        },
-                        trailingIcon = {
-                            IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                        )
+
+                        if (passwordResetPending) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = newPassword,
+                                onValueChange = { newPassword = it },
+                                label = { Text("New password (at least 12 characters)") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Lock, contentDescription = null, tint = YawarNavy, modifier = Modifier.size(18.dp))
+                                },
+                                visualTransformation = PasswordVisualTransformation(),
+                                singleLine = true,
+                                enabled = !isLoading,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = YawarBlue,
+                                    unfocusedBorderColor = BorderColor
+                                )
+                            )
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("Password (at least 12 characters)") },
+                            leadingIcon = {
                                 Icon(
-                                    imageVector = if (isPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = "Toggle password visibility",
-                                    tint = Slate,
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = null,
+                                    tint = YawarNavy,
                                     modifier = Modifier.size(18.dp)
                                 )
-                            }
-                        },
-                        visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        singleLine = true,
-                        enabled = !isLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = YawarBlue,
-                            unfocusedBorderColor = BorderColor
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                    Icon(
+                                        imageVector = if (isPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = "Toggle password visibility",
+                                        tint = Slate,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            },
+                            visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            singleLine = true,
+                            enabled = !isLoading,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.small,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = YawarBlue,
+                                unfocusedBorderColor = BorderColor
+                            )
                         )
-                    )
+                    }
 
                     Spacer(modifier = Modifier.height(18.dp))
 
@@ -348,7 +418,14 @@ fun AuthOnboardingScreen(
 
                     // Primary Sign In Button
                     Button(
-                        onClick = { if (isCreateAccount) onSignUp(email, password) else onSignIn(email, password) },
+                        onClick = {
+                            when {
+                                emailVerificationPending -> onVerifyEmailCode(email, emailCode)
+                                passwordResetPending -> onFinishPasswordReset(email, emailCode, newPassword)
+                                isCreateAccount -> onSignUp(email, password)
+                                else -> onSignIn(email, password)
+                            }
+                        },
                         enabled = !isLoading,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -368,10 +445,12 @@ fun AuthOnboardingScreen(
                             Text("Connecting securely…", fontWeight = FontWeight.Bold)
                         } else {
                             Text(
-                                text = when (currentLanguage) {
-                                    AppLanguage.ENGLISH -> if (isCreateAccount) "Create Account" else "Sign In to Portal"
-                                    AppLanguage.DARI -> "ورود به پورتال"
-                                    AppLanguage.PASHTO -> "پورتال ته ننوتل"
+                                text = when {
+                                    emailVerificationPending -> "Verify email"
+                                    passwordResetPending -> "Save new password"
+                                    currentLanguage == AppLanguage.ENGLISH -> if (isCreateAccount) "Create Account" else "Sign In to Portal"
+                                    currentLanguage == AppLanguage.DARI -> "ورود به پورتال"
+                                    else -> "پورتال ته ننوتل"
                                 },
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp
@@ -379,7 +458,7 @@ fun AuthOnboardingScreen(
                         }
                     }
 
-                    if (!isCreateAccount) {
+                    if (!isCreateAccount && !isCodeFlow) {
                         Text(
                             text = "Forgot password?",
                             color = YawarBlue,
@@ -389,10 +468,30 @@ fun AuthOnboardingScreen(
                         )
                     }
                     Spacer(modifier = Modifier.height(10.dp))
+                    if (isCodeFlow) {
+                        Text(
+                            text = if (emailVerificationPending) "Resend verification code" else "Resend password reset code",
+                            color = YawarBlue,
+                            modifier = Modifier.align(Alignment.CenterHorizontally).clickable(enabled = !isLoading) {
+                                if (emailVerificationPending) onResendEmailCode(email) else onPasswordReset(email)
+                            }.padding(top = 12.dp),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                     Text(
-                        text = if (isCreateAccount) "Already have an account? Sign in" else "New here? Create an account",
+                        text = if (isCodeFlow) "Back to sign in" else if (isCreateAccount) "Already have an account? Sign in" else "New here? Create an account",
                         color = YawarBlue,
-                        modifier = Modifier.align(Alignment.CenterHorizontally).clickable(enabled = !isLoading) { isCreateAccount = !isCreateAccount },
+                        modifier = Modifier.align(Alignment.CenterHorizontally).clickable(enabled = !isLoading) {
+                            if (isCodeFlow) {
+                                onCancelCodeFlow()
+                                emailCode = ""
+                                newPassword = ""
+                                isCreateAccount = false
+                            } else {
+                                isCreateAccount = !isCreateAccount
+                            }
+                        },
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )
