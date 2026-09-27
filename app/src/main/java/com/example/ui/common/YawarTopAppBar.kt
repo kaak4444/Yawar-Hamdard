@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Person
@@ -57,12 +56,10 @@ fun YawarTopAppBar(
     currentRole: UserRole,
     currentLanguage: AppLanguage,
     lowBandwidth: Boolean,
-    onRoleSelected: (UserRole) -> Unit,
     onLanguageSelected: (AppLanguage) -> Unit,
     modifier: Modifier = Modifier,
     onLogout: (() -> Unit)? = null
 ) {
-    var roleMenuExpanded by remember { mutableStateOf(false) }
     var langMenuExpanded by remember { mutableStateOf(false) }
 
     Box(
@@ -104,92 +101,39 @@ fun YawarTopAppBar(
                 }
             }
 
-            // Quick Role Switcher & Language Selector
+            // Server-assigned role and language selector
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Role Selector Pill
-                Box {
-                    Row(
-                        modifier = Modifier
-                            .clip(MaterialTheme.shapes.large)
-                            .background(PaleBlue)
-                            .border(1.dp, BorderColor, MaterialTheme.shapes.large)
-                            .clickable { roleMenuExpanded = true }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val roleIcon = when (currentRole) {
-                            UserRole.PATIENT -> Icons.Default.Person
-                            UserRole.DOCTOR -> Icons.Default.LocalHospital
-                            UserRole.ADMIN -> Icons.Default.AdminPanelSettings
-                        }
-                        Icon(
-                            imageVector = roleIcon,
-                            contentDescription = currentRole.displayName,
-                            tint = YawarBlue,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = currentRole.displayName,
-                            color = YawarNavy,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = "Switch Role",
-                            tint = YawarBlue,
-                            modifier = Modifier.size(16.dp)
-                        )
+                Row(
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.large)
+                        .background(PaleBlue)
+                        .border(1.dp, BorderColor, MaterialTheme.shapes.large)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val roleIcon = when (currentRole) {
+                        UserRole.PATIENT -> Icons.Default.Person
+                        UserRole.DOCTOR -> Icons.Default.LocalHospital
+                        UserRole.ADMIN -> Icons.Default.AdminPanelSettings
                     }
-
-                    DropdownMenu(
-                        expanded = roleMenuExpanded,
-                        onDismissRequest = { roleMenuExpanded = false }
-                    ) {
-                        UserRole.values().forEach { role ->
-                            DropdownMenuItem(
-                                text = {
-                                    Column {
-                                        Text(
-                                            text = role.displayName,
-                                            fontWeight = if (role == currentRole) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (role == currentRole) YawarNavy else Color.Unspecified
-                                        )
-                                        Text(
-                                            text = "${role.titleFa} | ${role.titlePs}",
-                                            fontSize = 11.sp,
-                                            color = Color.Gray
-                                        )
-                                    }
-                                },
-                                onClick = {
-                                    onRoleSelected(role)
-                                    roleMenuExpanded = false
-                                }
-                            )
-                        }
-                        if (onLogout != null) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = "Sign Out",
-                                        fontWeight = FontWeight.Bold,
-                                        color = DangerText
-                                    )
-                                },
-                                onClick = {
-                                    roleMenuExpanded = false
-                                    onLogout()
-                                }
-                            )
-                        }
-                    }
+                    Icon(roleIcon, contentDescription = currentRole.displayName, tint = YawarBlue, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(currentRole.displayName, color = YawarNavy, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
 
                 Spacer(modifier = Modifier.width(8.dp))
+
+                if (onLogout != null) {
+                    Text(
+                        text = "Sign out",
+                        color = DangerText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable { onLogout() }.padding(horizontal = 4.dp)
+                    )
+                }
 
                 // Language Selector Button
                 Box {

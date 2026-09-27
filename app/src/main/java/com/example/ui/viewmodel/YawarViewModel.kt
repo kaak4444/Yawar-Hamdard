@@ -1,6 +1,9 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import com.google.firebase.FirebaseApp
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppointmentEntity
@@ -52,28 +55,146 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: YawarRepository
 
-    init {
-        val database = YawarDatabase.getDatabase(application)
-        repository = YawarRepository(database.yawarDao())
-        viewModelScope.launch {
-            repository.checkAndSeedDatabase()
-        }
-    }
-
     // Role & Language State
+    private val firebaseAuth = FirebaseApp.getApps(application).firstOrNull()?.let {
+        FirebaseAuth.getInstance(it)
+    }
+    private val _authLoading = MutableStateFlow(false)
+    val authLoading: StateFlow<Boolean> = _authLoading.asStateFlow()
+    private val _authError = MutableStateFlow<String?>(null)
+    val authError: StateFlow<String?> = _authError.asStateFlow()
+    private val _authNotice = MutableStateFlow<String?>(null)
+    val authNotice: StateFlow<String?> = _authNotice.asStateFlow()
     private val _isUserLoggedIn = MutableStateFlow(false)
     val isUserLoggedIn: StateFlow<Boolean> = _isUserLoggedIn.asStateFlow()
 
     private val _currentRole = MutableStateFlow(UserRole.PATIENT)
     val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
 
-    fun login(role: UserRole) {
-        _currentRole.value = role
-        _isUserLoggedIn.value = true
+    private val authStateListener = FirebaseAuth.AuthStateListener { auth ->
+        auth.currentUser?.let(::activateVerifiedAccount) ?: run {
+            _isUserLoggedIn.value = false
+            _currentRole.value = UserRole.PATIENT
+        }
     }
 
+    init {
+        val database = YawarDatabase.getDatabase(application)
+        repository = YawarRepository(database.yawarDao())
+        viewModelScope.launch {
+            repository.checkAndSeedDatabase()
+        }
+        firebaseAuth?.addAuthStateListener(authStateListener)
+    }
+
+    fun signIn(email: String, password: String) {
+        val auth = firebaseAuth ?: return setAuthError("Firebase is not configured for this app yet. Add app/google-services.json and enable Email/Password sign-in in Firebase.")
+        if (email.isBlank() || password.isBlank()) return setAuthError("Enter your email and password.")
+        _authLoading.value = true
+        clearAuthFeedback()
+        auth.signInWithEmailAndPassword(email.trim(), password)
+            .addOnCompleteListener { task ->
+                if (!task.isSuccessful) {
+                    _authLoading.value = false
+                    setAuthError("Email or password is incorrect, or the account needs attention.")
+                    return@addOnCompleteListener
+                }
+                val user = auth.currentUser
+                if (user == null) {
+                    _authLoading.value = false
+                    setAuthError("Could not load the signed-in account.")
+                    return@addOnCompleteListener
+                }
+                user.reload().addOnCompleteListener {
+                    _authLoading.value = false
+                    if (it.isSuccessful && user.isEmailVerified) {
+                        activateVerifiedAccount(user)
+                    } else if (!it.isSuccessful) {
+                        auth.signOut()
+                        setAuthError("Could not verify the account status. Check your connection and try again.")
+                    } else {
+                        auth.signOut()
+                        _authNotice.value = "Check your email and verify your address before signing in."
+                    }
+                }
+            }
+    }
+
+    fun signUp(email: String, password: String) {
+        val auth = firebaseAuth ?: return setAuthError("Firebase is not configured for this app yet. Add app/google-services.json and enable Email/Password sign-in in Firebase.")
+        if (email.isBlank() || !email.contains('@')) return setAuthError("Enter a valid email address.")
+        if (password.length < 8) return setAuthError("Use a password with at least 8 characters.")
+        _authLoading.value = true
+        clearAuthFeedback()
+        auth.createUserWithEmailAndPassword(email.trim(), password)
+            .addOnCompleteListener { task ->
+                if (!task.isSuccessful) {
+                    _authLoading.value = false
+                    setAuthError("Could not create the account. Check the details or try signing in.")
+                    return@addOnCompleteListener
+                }
+                val user = task.result?.user
+                if (user == null) {
+                    _authLoading.value = false
+                    setAuthError("Could not create the account. Check the details or try signing in.")
+                    return@addOnCompleteListener
+                }
+                user.sendEmailVerification().addOnCompleteListener { verification ->
+                    _authLoading.value = false
+                    auth.signOut()
+                    if (verification.isSuccessful) {
+                        _authNotice.value = "Account created. Check your email for the verification link, then sign in."
+                    } else {
+                        setAuthError(verification.exception?.localizedMessage ?: "Account created, but the verification email could not be sent. Try signing in and resend it.")
+                    }
+                }
+            }
+    }
+
+    fun sendPasswordReset(email: String) {
+        val auth = firebaseAuth ?: return setAuthError("Firebase is not configured for this app yet. Add app/google-services.json and enable Email/Password sign-in in Firebase.")
+        if (email.isBlank() || !email.contains('@')) return setAuthError("Enter the email address for your account.")
+        _authLoading.value = true
+        clearAuthFeedback()
+        auth.sendPasswordResetEmail(email.trim()).addOnCompleteListener { task ->
+            _authLoading.value = false
+            // Same message either way, so the screen does not reveal whether an email is registered.
+            _authNotice.value = "If an account exists for that email, a password reset link has been sent."
+        }
+    }
+
+    private fun activateVerifiedAccount(user: FirebaseUser) {
+        if (!user.isEmailVerified) {
+            _isUserLoggedIn.value = false
+            _currentRole.value = UserRole.PATIENT
+            return
+        }
+        user.getIdToken(false).addOnSuccessListener { token ->
+            val role = when (token.claims["role"] as? String) {
+                "doctor" -> UserRole.DOCTOR
+                "admin" -> UserRole.ADMIN
+                else -> UserRole.PATIENT
+            }
+            _currentRole.value = role
+            _isUserLoggedIn.value = true
+            _authLoading.value = false
+            clearAuthFeedback()
+        }.addOnFailureListener { error ->
+            _authLoading.value = false
+            setAuthError(error.localizedMessage ?: "Could not verify account permissions.")
+            _isUserLoggedIn.value = false
+        }
+    }
+
+    private fun setAuthError(message: String) { _authError.value = message }
+    private fun clearAuthFeedback() { _authError.value = null; _authNotice.value = null }
+
+    fun clearAuthError() { _authError.value = null }
+
     fun logout() {
+        firebaseAuth?.signOut()
         _isUserLoggedIn.value = false
+        _currentRole.value = UserRole.PATIENT
     }
 
     private val _currentLanguage = MutableStateFlow(AppLanguage.ENGLISH)
@@ -170,11 +291,6 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     // Toast / Banner notice
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
-
-    fun setRole(role: UserRole) {
-        _currentRole.value = role
-        showSnackbar("Switched to ${role.displayName} mode")
-    }
 
     fun setLanguage(language: AppLanguage) {
         _currentLanguage.value = language

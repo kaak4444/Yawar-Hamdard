@@ -76,6 +76,9 @@ class MainActivity : ComponentActivity() {
             YawarTheme {
                 val isUserLoggedIn by viewModel.isUserLoggedIn.collectAsState()
                 val currentRole by viewModel.currentRole.collectAsState()
+                val authLoading by viewModel.authLoading.collectAsState()
+                val authError by viewModel.authError.collectAsState()
+                val authNotice by viewModel.authNotice.collectAsState()
                 val currentLanguage by viewModel.currentLanguage.collectAsState()
                 val lowBandwidth by viewModel.lowBandwidthMode.collectAsState()
                 val snackbarMessage by viewModel.snackbarMessage.collectAsState()
@@ -109,9 +112,12 @@ class MainActivity : ComponentActivity() {
                         AuthOnboardingScreen(
                             currentLanguage = currentLanguage,
                             onLanguageSelected = { viewModel.setLanguage(it) },
-                            onLoginSuccess = { role ->
-                                viewModel.login(role)
-                            }
+                            onSignIn = viewModel::signIn,
+                            onSignUp = viewModel::signUp,
+                            onPasswordReset = viewModel::sendPasswordReset,
+                            isLoading = authLoading,
+                            errorMessage = authError,
+                            noticeMessage = authNotice
                         )
                     } else {
                         Scaffold(
@@ -122,7 +128,6 @@ class MainActivity : ComponentActivity() {
                                         currentRole = currentRole,
                                         currentLanguage = currentLanguage,
                                         lowBandwidth = lowBandwidth,
-                                        onRoleSelected = { viewModel.setRole(it) },
                                         onLanguageSelected = { viewModel.setLanguage(it) },
                                         onLogout = { viewModel.logout() }
                                     )

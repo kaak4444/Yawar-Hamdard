@@ -244,61 +244,7 @@ fun ProfileScreen(
             }
         }
 
-        // Role Switcher (New feature as requested by user)
-        item {
-            Card(
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.AdminPanelSettings, contentDescription = "Role", tint = YawarNavy, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Platform Role (Settings)",
-                            fontWeight = FontWeight.Bold,
-                            color = Ink,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    UserRole.values().forEach { role ->
-                        val isSelected = currentRole == role
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(MaterialTheme.shapes.extraSmall)
-                                .background(if (isSelected) PaleBlue else Color.Transparent)
-                                .clickable { viewModel.setRole(role) }
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = { viewModel.setRole(role) },
-                                    colors = androidx.compose.material3.RadioButtonDefaults.colors(selectedColor = YawarBlue)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = role.displayName,
-                                    color = if (isSelected) YawarBlue else Ink,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 5. Emergency Numbers
+        // Roles are assigned by the trusted Firebase backend, never by this client.        // 5. Emergency Numbers
         item {
             Card(
                 shape = MaterialTheme.shapes.medium,

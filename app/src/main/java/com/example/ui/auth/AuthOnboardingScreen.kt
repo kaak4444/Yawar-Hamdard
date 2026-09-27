@@ -57,7 +57,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,7 +72,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.AppLanguage
-import com.example.data.model.UserRole
 import com.example.ui.common.VerifiedImageResources
 import com.example.ui.theme.BorderColor
 import com.example.ui.theme.ClinicalGreen
@@ -84,40 +82,23 @@ import com.example.ui.theme.Slate
 import com.example.ui.theme.YawarBlue
 import com.example.ui.theme.YawarNavy
 import com.example.ui.theme.SlateSoft
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 @Composable
 fun AuthOnboardingScreen(
     currentLanguage: AppLanguage,
     onLanguageSelected: (AppLanguage) -> Unit,
-    onLoginSuccess: (UserRole) -> Unit,
+    onSignIn: (String, String) -> Unit,
+    onSignUp: (String, String) -> Unit,
+    onPasswordReset: (String) -> Unit,
+    isLoading: Boolean,
+    errorMessage: String?,
+    noticeMessage: String?,
     modifier: Modifier = Modifier
 ) {
-    var selectedRole by remember { mutableStateOf(UserRole.PATIENT) }
-    var identifier by remember { mutableStateOf("+93 707 438 303") }
-    var password by remember { mutableStateOf("••••••••") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var isPasswordVisible by remember { mutableStateOf(false) }
-
-    // Cloudflare Turnstile state
-    var isCloudflareVerifying by remember { mutableStateOf(false) }
-    var isCloudflareVerified by remember { mutableStateOf(false) }
-
-    val scope = rememberCoroutineScope()
-
-    fun triggerCloudflareVerification(onVerified: (() -> Unit)? = null) {
-        if (isCloudflareVerified) {
-            onVerified?.invoke()
-            return
-        }
-        isCloudflareVerifying = true
-        scope.launch {
-            delay(1000)
-            isCloudflareVerifying = false
-            isCloudflareVerified = true
-            onVerified?.invoke()
-        }
-    }
+    var isCreateAccount by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -219,7 +200,7 @@ fun AuthOnboardingScreen(
             // Portal Welcome Title
             Text(
                 text = when (currentLanguage) {
-                    AppLanguage.ENGLISH -> "Sign In to Yawar Hamdard"
+                    AppLanguage.ENGLISH -> if (isCreateAccount) "Create your Yawar Hamdard account" else "Sign In to Yawar Hamdard"
                     AppLanguage.DARI -> "ورود به خدمات صحی یاور همدرد"
                     AppLanguage.PASHTO -> "یاور همدرد روغتیایی خدمتونو ته ننوتل"
                 },
@@ -240,58 +221,17 @@ fun AuthOnboardingScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // 2. Role Selector Tabs
+            // Account privileges are assigned by Firebase Admin SDK custom claims.
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = SlateSoft),
+                colors = CardDefaults.cardColors(containerColor = PaleBlue),
                 border = BorderStroke(1.dp, BorderColor)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    val roles = listOf(
-                        Triple(UserRole.PATIENT, "Patient", Icons.Default.Person),
-                        Triple(UserRole.DOCTOR, "Doctor", Icons.Default.LocalHospital),
-                        Triple(UserRole.ADMIN, "Coordinator", Icons.Default.AdminPanelSettings)
-                    )
-
-                    roles.forEach { (role, label, icon) ->
-                        val isSelected = selectedRole == role
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(MaterialTheme.shapes.small)
-                                .background(if (isSelected) Color.White else Color.Transparent)
-                                .border(
-                                    1.dp,
-                                    if (isSelected) BorderColor else Color.Transparent,
-                                    MaterialTheme.shapes.small
-                                )
-                                .clickable { selectedRole = role }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) YawarNavy else Slate,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = label,
-                                    color = if (isSelected) YawarNavy else Slate,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                )
-                            }
-                        }
-                    }
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Shield, contentDescription = null, tint = YawarBlue, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Patient account • staff access is granted by an administrator", color = YawarNavy, fontSize = 12.sp)
                 }
             }
 
@@ -313,11 +253,7 @@ fun AuthOnboardingScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = when (selectedRole) {
-                                UserRole.PATIENT -> "Patient Portal Access"
-                                UserRole.DOCTOR -> "MoPH Verified Physician Login"
-                                UserRole.ADMIN -> "YHCS Operations Desk"
-                            },
+                            text = if (isCreateAccount) "Create a Patient Account" else "Patient Portal Access",
                             fontWeight = FontWeight.Bold,
                             color = YawarNavy,
                             fontSize = 14.sp
@@ -329,7 +265,7 @@ fun AuthOnboardingScreen(
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = "ONLINE",
+                                text = "EMAIL VERIFIED",
                                 color = ClinicalGreen,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -339,20 +275,23 @@ fun AuthOnboardingScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Phone or Email Input
+                    // Firebase email/password account
                     OutlinedTextField(
-                        value = identifier,
-                        onValueChange = { identifier = it },
-                        label = { Text("Mobile (+93) or Corporate Email") },
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Email address") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.Phone,
+                                imageVector = Icons.Default.Person,
                                 contentDescription = null,
                                 tint = YawarNavy,
                                 modifier = Modifier.size(18.dp)
                             )
                         },
                         singleLine = true,
+                        enabled = !isLoading,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (isCreateAccount) onSignUp(email, password) else onSignIn(email, password) }),
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -363,11 +302,10 @@ fun AuthOnboardingScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Password / Security PIN
                     OutlinedTextField(
                         value = password,
                         onValueChange = { password = it },
-                        label = { Text("Password or Security PIN") },
+                        label = { Text("Password (at least 8 characters)") },
                         leadingIcon = {
                             Icon(
                                 imageVector = Icons.Default.Lock,
@@ -388,6 +326,7 @@ fun AuthOnboardingScreen(
                         },
                         visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         singleLine = true,
+                        enabled = !isLoading,
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -398,28 +337,19 @@ fun AuthOnboardingScreen(
 
                     Spacer(modifier = Modifier.height(18.dp))
 
-                    // 4. Cloudflare Turnstile Human Verification Widget
-                    CloudflareTurnstileWidget(
-                        isVerified = isCloudflareVerified,
-                        isVerifying = isCloudflareVerifying,
-                        onTrigger = {
-                            triggerCloudflareVerification()
-                        }
-                    )
-
-                    Spacer(modifier = Modifier.height(18.dp))
+                    if (errorMessage != null) {
+                        Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    if (noticeMessage != null) {
+                        Text(noticeMessage, color = ClinicalGreen, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
 
                     // Primary Sign In Button
                     Button(
-                        onClick = {
-                            if (!isCloudflareVerified) {
-                                triggerCloudflareVerification {
-                                    onLoginSuccess(selectedRole)
-                                }
-                            } else {
-                                onLoginSuccess(selectedRole)
-                            }
-                        },
+                        onClick = { if (isCreateAccount) onSignUp(email, password) else onSignIn(email, password) },
+                        enabled = !isLoading,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(50.dp),
@@ -428,18 +358,18 @@ fun AuthOnboardingScreen(
                             containerColor = YawarNavy
                         )
                     ) {
-                        if (isCloudflareVerifying) {
+                        if (isLoading) {
                             CircularProgressIndicator(
                                 color = Color.White,
                                 strokeWidth = 2.dp,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Securing Connection...", fontWeight = FontWeight.Bold)
+                            Text("Connecting securely…", fontWeight = FontWeight.Bold)
                         } else {
                             Text(
                                 text = when (currentLanguage) {
-                                    AppLanguage.ENGLISH -> "Sign In to Portal"
+                                    AppLanguage.ENGLISH -> if (isCreateAccount) "Create Account" else "Sign In to Portal"
                                     AppLanguage.DARI -> "ورود به پورتال"
                                     AppLanguage.PASHTO -> "پورتال ته ننوتل"
                                 },
@@ -449,34 +379,23 @@ fun AuthOnboardingScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // One-Tap Demo Access Button
-                    OutlinedButton(
-                        onClick = {
-                            // Instant bypass for tester / reviewer
-                            onLoginSuccess(selectedRole)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        shape = MaterialTheme.shapes.small,
-                        border = BorderStroke(1.dp, BorderColor)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.HealthAndSafety,
-                            contentDescription = null,
-                            tint = ClinicalGreen,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
+                    if (!isCreateAccount) {
                         Text(
-                            text = "Quick Demo Access (Skip for Review)",
-                            color = Slate,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            text = "Forgot password?",
+                            color = YawarBlue,
+                            modifier = Modifier.align(Alignment.End).clickable(enabled = !isLoading) { onPasswordReset(email) }.padding(top = 12.dp),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = if (isCreateAccount) "Already have an account? Sign in" else "New here? Create an account",
+                        color = YawarBlue,
+                        modifier = Modifier.align(Alignment.CenterHorizontally).clickable(enabled = !isLoading) { isCreateAccount = !isCreateAccount },
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
 
@@ -524,134 +443,6 @@ fun AuthOnboardingScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-        }
-    }
-}
-
-/**
- * Authentic Cloudflare Turnstile Verification Widget
- * Conforms to Cloudflare Turnstile visual design specs with interactive verification.
- */
-@Composable
-private fun CloudflareTurnstileWidget(
-    isVerified: Boolean,
-    isVerifying: Boolean,
-    onTrigger: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.small)
-            .clickable(enabled = !isVerified && !isVerifying) { onTrigger() },
-        shape = MaterialTheme.shapes.small,
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        border = BorderStroke(1.dp, if (isVerified) YawarBlueLight else BorderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Interactive Checkbox & Prompt
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            when {
-                                isVerified -> YawarBlue
-                                isVerifying -> Color(0xFFE5E7EB)
-                                else -> Color.White
-                            }
-                        )
-                        .border(
-                            1.5.dp,
-                            when {
-                                isVerified -> YawarBlue
-                                isVerifying -> BorderColor
-                                else -> BorderColor
-                            },
-                            RoundedCornerShape(6.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    when {
-                        isVerified -> {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Verified",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        isVerifying -> {
-                            CircularProgressIndicator(
-                                color = Color(0xFFF38020), // Cloudflare Orange
-                                strokeWidth = 2.5.dp,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                        else -> {
-                            // Unchecked empty box
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column {
-                    Text(
-                        text = when {
-                            isVerified -> "Verification successful"
-                            isVerifying -> "Verifying you are human..."
-                            else -> "Verify you are human"
-                        },
-                        fontWeight = if (isVerified) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (isVerified) YawarBlue else Ink,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = if (isVerified) "Browser integrity confirmed" else "Tap checkbox to confirm security challenge",
-                        color = Slate,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            // Cloudflare Turnstile Official Branding Badge
-            Column(
-                horizontalAlignment = Alignment.End,
-                modifier = Modifier.padding(start = 8.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Cloud,
-                        contentDescription = "Cloudflare",
-                        tint = Color(0xFFF38020), // Official Cloudflare Orange
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "CLOUDFLARE",
-                        fontWeight = FontWeight.Black,
-                        fontSize = 11.sp,
-                        color = Ink,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-                Text(
-                    text = "Turnstile • Privacy • Terms",
-                    fontSize = 11.sp,
-                    color = Color(0xFF9CA3AF)
-                )
-            }
         }
     }
 }
