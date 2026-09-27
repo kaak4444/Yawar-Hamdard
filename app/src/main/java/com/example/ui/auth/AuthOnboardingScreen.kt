@@ -20,8 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -72,7 +71,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.AppLanguage
-import com.example.ui.common.VerifiedImageResources
 import com.example.ui.theme.BorderColor
 import com.example.ui.theme.ClinicalGreen
 import com.example.ui.theme.Ink
@@ -179,29 +177,21 @@ fun AuthOnboardingScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 1. Official Brand Logo Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            // Compact white brand mark on a solid blue cover panel.
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(126.dp)
+                    .clip(MaterialTheme.shapes.large)
+                    .background(colorResource(id = R.color.yawar_blue)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 20.dp, horizontal = 20.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Image(
-                        painter = painterResource(id = VerifiedImageResources.yawarLogoCover),
-                        contentDescription = "Yawar Hamdard Health Consulting Services",
-                        modifier = Modifier
-                            .widthIn(max = 300.dp)
-                            .heightIn(max = 150.dp),
-                        contentScale = ContentScale.Fit
-                    )
-                }
+                Image(
+                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                    contentDescription = "Yawar Hamdard Health Consulting Services",
+                    modifier = Modifier.size(120.dp),
+                    contentScale = ContentScale.Fit
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

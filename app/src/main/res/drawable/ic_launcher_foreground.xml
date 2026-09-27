@@ -5,32 +5,32 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Official Yawar Hamdard Brand Logo Centered in Adaptive Safe Zone -->
+    <!-- Compact, all-white Yawar Hamdard mark centered in the adaptive safe zone -->
     <group
         android:name="launcher_logo_group"
-        android:scaleX="0.26"
-        android:scaleY="0.26"
-        android:translateX="-42"
-        android:translateY="6">
+        android:scaleX="0.23"
+        android:scaleY="0.23"
+        android:translateX="-34.5"
+        android:translateY="11.2">
 
-        <!-- Circular Head of Person (Green) -->
+        <!-- Circular head of person -->
         <path
-            android:fillColor="#009A3E"
+            android:fillColor="#FFFFFFFF"
             android:pathData="M340,120m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" />
 
-        <!-- Person Arms & Body forming 'Y' (Green) -->
+        <!-- Person arms and body forming the Y -->
         <path
-            android:fillColor="#009A3E"
+            android:fillColor="#FFFFFFFF"
             android:pathData="M246,126 L246,156 C272,178 308,214 318,238 L318,295 L352,295 L352,238 C362,214 398,178 424,142 L424,124 C394,150 374,178 340,178 C306,178 286,150 246,126 Z" />
 
-        <!-- Healthcare Cross (Green) -->
+        <!-- Healthcare cross -->
         <path
-            android:fillColor="#009A3E"
+            android:fillColor="#FFFFFFFF"
             android:pathData="M462,82 C462,79 465,77 468,77 L484,77 C487,77 490,79 490,82 L490,111 L519,111 C522,111 524,113 524,116 L524,136 C524,139 522,141 519,141 L490,141 L490,170 C490,173 487,175 484,175 L468,175 C465,175 462,173 462,170 L462,141 L433,141 C430,141 428,139 428,136 L428,116 C428,113 430,111 433,111 L462,111 Z" />
 
-        <!-- Bold 'H' Shape (Royal Blue) -->
+        <!-- H shape -->
         <path
-            android:fillColor="#005CB9"
+            android:fillColor="#FFFFFFFF"
             android:pathData="M414,166 C390,176 368,203 368,235 L368,295 L403,295 L403,243 C403,239 407,235 411,235 L459,235 C463,235 467,239 467,243 L467,295 L497,295 L497,185 C497,180 493,177 488,177 L474,177 C469,177 466,180 466,185 L466,206 L414,206 L414,166 Z" />
     </group>
 </vector>
