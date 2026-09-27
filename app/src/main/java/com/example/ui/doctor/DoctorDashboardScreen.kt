@@ -89,7 +89,7 @@ fun DoctorDashboardScreen(
     val language by viewModel.currentLanguage.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
 
-    val activeDoctor = doctors.firstOrNull { it.id == "doc_momand" } ?: doctors.firstOrNull()
+    val activeDoctor = doctors.firstOrNull { it.id.toLongOrNull() != null } ?: doctors.firstOrNull()
 
     // Dialog state for declining or completing
     var completeApptId by remember { mutableStateOf<String?>(null) }

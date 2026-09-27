@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -116,6 +117,8 @@ fun YawarTopAppBar(
                     val roleIcon = when (currentRole) {
                         UserRole.PATIENT -> Icons.Default.Person
                         UserRole.DOCTOR -> Icons.Default.LocalHospital
+                        UserRole.CALL_CENTER -> Icons.Default.Phone
+                        UserRole.HOSPITAL -> Icons.Default.LocalHospital
                         UserRole.ADMIN -> Icons.Default.AdminPanelSettings
                     }
                     Icon(roleIcon, contentDescription = currentRole.displayName, tint = YawarBlue, modifier = Modifier.size(15.dp))

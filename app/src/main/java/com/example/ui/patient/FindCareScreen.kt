@@ -250,8 +250,8 @@ fun FindCareScreen(
                                     doctor = doc,
                                     language = language,
                                     onBook = {
-                                        viewModel.startBooking(doc)
-                                        onOpenBooking(doc)
+                                        viewModel.startBooking(specialty = doc.specialty)
+                                        onOpenBooking(null)
                                     },
                                     onClick = { viewModel.openDoctorDetail(doc) }
                                 )

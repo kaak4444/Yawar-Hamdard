@@ -19,4 +19,5 @@ return [
     'smtp_user' => 'no-reply@yawarconsulting.com',
     'smtp_password' => 'SET_THE_HOSTINGER_MAILBOX_PASSWORD',
     'from_name' => 'Yawar Hamdard',
+    'documents_path' => '/path/outside/public_html/yawar-private-documents',
 ];

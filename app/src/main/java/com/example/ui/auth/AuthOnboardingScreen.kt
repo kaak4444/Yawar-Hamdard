@@ -41,6 +41,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.AppLanguage
+import com.example.data.model.UserRole
 import com.example.ui.theme.BorderColor
 import com.example.ui.theme.ClinicalGreen
 import com.example.ui.theme.Ink
@@ -86,7 +88,7 @@ fun AuthOnboardingScreen(
     currentLanguage: AppLanguage,
     onLanguageSelected: (AppLanguage) -> Unit,
     onSignIn: (String, String) -> Unit,
-    onSignUp: (String, String) -> Unit,
+    onSignUp: (String, String, UserRole, String, String, String, String) -> Unit,
     onPasswordReset: (String) -> Unit,
     emailVerificationPending: Boolean,
     passwordResetPending: Boolean,
@@ -101,6 +103,11 @@ fun AuthOnboardingScreen(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var fullName by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var specialty by remember { mutableStateOf("") }
+    var licenseNumber by remember { mutableStateOf("") }
+    var signupRole by remember { mutableStateOf(UserRole.PATIENT) }
     var isPasswordVisible by remember { mutableStateOf(false) }
     var isCreateAccount by remember { mutableStateOf(false) }
     var emailCode by remember { mutableStateOf("") }
@@ -230,7 +237,7 @@ fun AuthOnboardingScreen(
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Shield, contentDescription = null, tint = YawarBlue, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Patient account • staff access is granted by an administrator", color = YawarNavy, fontSize = 12.sp)
+                    Text("Patients and doctors can register here. Staff accounts are created by the manager.", color = YawarNavy, fontSize = 12.sp)
                 }
             }
 
@@ -255,7 +262,7 @@ fun AuthOnboardingScreen(
                             text = when {
                                 emailVerificationPending -> "Verify your email address"
                                 passwordResetPending -> "Reset your password"
-                                isCreateAccount -> "Create a Patient Account"
+                                isCreateAccount -> "Create a ${signupRole.displayName} Account"
                                 else -> "Patient Portal Access"
                             },
                             fontWeight = FontWeight.Bold,
@@ -283,6 +290,62 @@ fun AuthOnboardingScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    if (isCreateAccount && !isCodeFlow) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = signupRole == UserRole.PATIENT,
+                                onClick = { signupRole = UserRole.PATIENT },
+                                label = { Text("Patient") }
+                            )
+                            FilterChip(
+                                selected = signupRole == UserRole.DOCTOR,
+                                onClick = { signupRole = UserRole.DOCTOR },
+                                label = { Text("Doctor") }
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = fullName,
+                            onValueChange = { fullName = it },
+                            label = { Text("Full name") },
+                            singleLine = true,
+                            enabled = !isLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = { Text("Phone number, including country code") },
+                            singleLine = true,
+                            enabled = !isLoading,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (signupRole == UserRole.DOCTOR) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = specialty,
+                                onValueChange = { specialty = it },
+                                label = { Text("Medical specialty") },
+                                singleLine = true,
+                                enabled = !isLoading,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = licenseNumber,
+                                onValueChange = { licenseNumber = it },
+                                label = { Text("Medical license number") },
+                                singleLine = true,
+                                enabled = !isLoading,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text("A manager must verify your credentials before patients can be referred to you.", color = Slate, fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
                     // Hostinger-backed account email
                     OutlinedTextField(
                         value = email,
@@ -299,7 +362,7 @@ fun AuthOnboardingScreen(
                         singleLine = true,
                         enabled = !isLoading && !isCodeFlow,
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (isCreateAccount) onSignUp(email, password) else onSignIn(email, password) }),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (isCreateAccount) onSignUp(email, password, signupRole, fullName, phone, specialty, licenseNumber) else onSignIn(email, password) }),
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
                         colors = OutlinedTextFieldDefaults.colors(
@@ -412,7 +475,7 @@ fun AuthOnboardingScreen(
                             when {
                                 emailVerificationPending -> onVerifyEmailCode(email, emailCode)
                                 passwordResetPending -> onFinishPasswordReset(email, emailCode, newPassword)
-                                isCreateAccount -> onSignUp(email, password)
+                                isCreateAccount -> onSignUp(email, password, signupRole, fullName, phone, specialty, licenseNumber)
                                 else -> onSignIn(email, password)
                             }
                         },

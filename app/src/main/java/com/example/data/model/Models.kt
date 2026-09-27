@@ -3,7 +3,9 @@ package com.example.data.model
 enum class UserRole(val displayName: String, val titleFa: String, val titlePs: String) {
     PATIENT("Patient", "بیمار / مراجع", "ناروغ / مراجع"),
     DOCTOR("Doctor", "داکتر معالج", "ډاکټر"),
-    ADMIN("YHCS Coordinator", "هماهنگ‌کننده یاور", "د یاور همغږی کوونکی")
+    CALL_CENTER("Call Center", "مرکز تماس", "د اړیکو مرکز"),
+    HOSPITAL("Hospital", "شفاخانه", "روغتون"),
+    ADMIN("YHCS Manager", "مدیر یاور", "د یاور مدیر")
 }
 
 enum class AppLanguage(val code: String, val displayName: String, val nativeName: String, val isRtl: Boolean) {

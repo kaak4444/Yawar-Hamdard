@@ -31,6 +31,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.BorderColor
 import com.example.ui.theme.ClinicalGreen
@@ -165,20 +166,29 @@ fun HospitalLogoBadge(
     logoUrl: String = "",
     hospitalId: String = ""
 ) {
-    val idToQuery = hospitalId.ifBlank { logoUrl }.ifBlank { hospitalName }
+    val idToQuery = logoUrl.ifBlank { hospitalId }.ifBlank { hospitalName }
     val logoRes = VerifiedImageResources.hospital(idToQuery)
-
-    VerifiedProviderImage(
-        imageRes = logoRes,
-        contentDescription = "$hospitalName logo",
-        modifier = modifier
-            .size(size)
-            .clip(MaterialTheme.shapes.small)
-            .border(1.dp, BorderColor, MaterialTheme.shapes.small)
-            .background(MaterialTheme.colorScheme.surface),
-        contentScale = ContentScale.Fit,
-        fallbackText = hospitalName
-    )
+    val imageModifier = modifier
+        .size(size)
+        .clip(MaterialTheme.shapes.small)
+        .border(1.dp, BorderColor, MaterialTheme.shapes.small)
+        .background(MaterialTheme.colorScheme.surface)
+    if (logoRes == null && idToQuery.startsWith("https://", ignoreCase = true)) {
+        AsyncImage(
+            model = idToQuery,
+            contentDescription = "$hospitalName logo",
+            modifier = imageModifier,
+            contentScale = ContentScale.Fit
+        )
+    } else {
+        VerifiedProviderImage(
+            imageRes = logoRes,
+            contentDescription = "$hospitalName logo",
+            modifier = imageModifier,
+            contentScale = ContentScale.Fit,
+            fallbackText = hospitalName
+        )
+    }
 }
 
 /**
@@ -194,8 +204,7 @@ fun DoctorAvatarBadge(
     imageUrl: String = "",
     doctorId: String = ""
 ) {
-    val idToQuery = doctorId.ifBlank { imageUrl }.ifBlank { doctorName }
-    val imageRes = VerifiedImageResources.doctor(idToQuery)
+    val imageRes = VerifiedImageResources.doctor(doctorId).let { it ?: VerifiedImageResources.doctor(imageUrl) }
 
     if (imageRes != null) {
         VerifiedProviderImage(
@@ -207,6 +216,13 @@ fun DoctorAvatarBadge(
                 .clip(MaterialTheme.shapes.medium),
             contentScale = ContentScale.Crop,
             fallbackText = doctorName
+        )
+    } else if (imageUrl.startsWith("https://", ignoreCase = true)) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = doctorName,
+            modifier = modifier.size(size).aspectRatio(4f / 5f).clip(MaterialTheme.shapes.medium),
+            contentScale = ContentScale.Crop
         )
     } else {
         val (bgColor, tintColor) = when {

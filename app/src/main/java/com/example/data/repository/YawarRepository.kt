@@ -26,15 +26,39 @@ class YawarRepository(private val dao: YawarDao) {
 
     suspend fun checkAndSeedDatabase() {
         val currentDoctors = dao.getAllDoctors().firstOrNull()
-        if (currentDoctors.isNullOrEmpty() || currentDoctors.none { it.id == "doc_momand" }) {
+        if (currentDoctors.isNullOrEmpty()) {
             dao.insertDoctors(DataSeed.sampleDoctors)
             dao.insertFacilities(DataSeed.sampleFacilities)
-            dao.insertAppointments(DataSeed.sampleAppointments)
-            dao.insertClaims(DataSeed.sampleClaims)
-            dao.insertCases(DataSeed.sampleCases)
-            dao.insertMessages(DataSeed.sampleMessages)
-            dao.insertUserProfile(UserProfileEntity())
         }
+    }
+
+    suspend fun clearAccountPrivateData() {
+        dao.clearAppointments()
+        dao.clearClaims()
+        dao.clearCases()
+        dao.clearMessages()
+        dao.clearUserProfile()
+    }
+
+    suspend fun replaceCareRequests(requests: List<AppointmentEntity>) {
+        dao.clearAppointments()
+        if (requests.isNotEmpty()) dao.insertAppointments(requests)
+    }
+
+    suspend fun replaceCareMessages(messages: List<MessageEntity>) {
+        dao.clearMessages()
+        if (messages.isNotEmpty()) dao.insertMessages(messages)
+    }
+
+    suspend fun replaceHospitals(hospitals: List<FacilityEntity>) {
+        dao.clearFacilities()
+        if (hospitals.isNotEmpty()) dao.insertFacilities(hospitals)
+    }
+
+    suspend fun replaceDoctors(doctors: List<DoctorEntity>) {
+        dao.clearDoctors()
+        val merged = (doctors + DataSeed.sampleDoctors).distinctBy { it.name.trim().lowercase() }
+        if (merged.isNotEmpty()) dao.insertDoctors(merged)
     }
 
     fun getDoctorById(id: String): Flow<DoctorEntity?> = dao.getDoctorById(id)
@@ -97,7 +121,5 @@ class YawarRepository(private val dao: YawarDao) {
         dao.insertUserProfile(profile)
     }
 
-    suspend fun updateDoctor(doctor: DoctorEntity) {
-        dao.updateDoctor(doctor)
-    }
+    suspend fun updateDoctor(doctor: DoctorEntity) { dao.updateDoctor(doctor) }
 }

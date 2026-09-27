@@ -264,7 +264,7 @@ fun ClaimCard(
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Approved Settlement", color = Slate, fontSize = 11.sp)
                     Text(
-                        text = if (claim.approvedAmountAf > 0) "${claim.approvedAmountAf.toInt()} AFN" else "Under Review",
+                        text = if (claim.approvedAmountAf > 0) "${claim.approvedAmountAf.toInt()} AFN" else claim.status.labelEn,
                         color = if (claim.approvedAmountAf > 0) DeepGreen else YawarBlue,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
@@ -372,7 +372,7 @@ fun ClaimsGuidanceView() {
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text("Dedicated Claims Support Desk", fontWeight = FontWeight.Bold, color = YawarNavy, fontSize = 13.sp)
-                        Text("callcenter@yawarconsulting.com • Subject: Claims Assistance", color = YawarBlue, fontSize = 11.sp)
+                        Text("info@yawarconsulting.com • Subject: Claims Assistance", color = YawarBlue, fontSize = 11.sp)
                     }
                 }
             }
@@ -425,14 +425,14 @@ fun NewClaimSubmissionDialog(
     onSubmit: (type: String, provider: String, amount: Double, notes: String) -> Unit
 ) {
     var claimType by remember { mutableStateOf("Reimbursement") }
-    var provider by remember { mutableStateOf("FMIC Tertiary Care Hospital") }
-    var amountText by remember { mutableStateOf("4500") }
+    var provider by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Submit Claim / Cashless Pre-Auth", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Text("Save Claim Draft / Cashless Pre-Auth", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         },
         text = {
             Column {
@@ -497,7 +497,7 @@ fun NewClaimSubmissionDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Text(
-                    text = "Notification will be sent to callcenter@yawarconsulting.com",
+                    text = "This feature currently saves a draft on this device; it does not submit a claim to Yawar.",
                     fontSize = 11.sp,
                     color = YawarBlue
                 )
@@ -511,7 +511,7 @@ fun NewClaimSubmissionDialog(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = ClinicalGreen)
             ) {
-                Text("Submit")
+                Text("Save draft")
             }
         },
         dismissButton = {

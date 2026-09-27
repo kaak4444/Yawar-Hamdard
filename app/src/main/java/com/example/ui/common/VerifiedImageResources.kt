@@ -59,7 +59,7 @@ object VerifiedImageResources {
      */
     @DrawableRes
     fun hospital(hospitalId: String): Int? {
-        val clean = hospitalId.lowercase().trim()
+        val clean = hospitalId.lowercase().trim().substringAfterLast('/').substringBefore('?').substringBeforeLast('.')
         // Blossom is the only facility without a supplied or verified logo.
         if (clean == "hosp_16" || clean.contains("blossom")) {
             return null

@@ -148,8 +148,8 @@ object AppStrings {
     }
 
     fun getCallCenterAlertNotice(lang: AppLanguage): String = when (lang) {
-        AppLanguage.ENGLISH -> "Operational notification sent to callcenter@yawarconsulting.com"
-        AppLanguage.DARI -> "اطلاعیه عملیاتی به callcenter@yawarconsulting.com ارسال شد"
-        AppLanguage.PASHTO -> "عملیاتي خبرتیا callcenter@yawarconsulting.com ته ولېږل شوه"
+        AppLanguage.ENGLISH -> "Your care request is waiting for Yawar call-center review"
+        AppLanguage.DARI -> "درخواست مراقبت شما در انتظار بررسی مرکز تماس یاور است"
+        AppLanguage.PASHTO -> "ستاسو د پاملرنې غوښتنه د یاور د اړیکو مرکز د ارزونې په تمه ده"
     }
 }

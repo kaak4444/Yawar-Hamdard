@@ -24,7 +24,7 @@ import com.example.ui.theme.ChatBubbleIn
 import com.example.ui.theme.ChatBubbleOut
 import com.example.ui.theme.ChatCanvas
 import com.example.ui.theme.Ink
-import com.example.ui.theme.YawarBlue
+import com.example.ui.theme.WhatsAppGreenBright
 
 /**
  * Scatters a faint, deterministic doodle over the chat canvas. The wallpaper is
@@ -32,7 +32,7 @@ import com.example.ui.theme.YawarBlue
  * box instead. Drawn under the messages rather than as an asset so it scales to
  * any thread length and needs no new drawable.
  */
-fun Modifier.chatDoodleWallpaper(tint: Color = YawarBlue): Modifier = drawBehind {
+fun Modifier.chatDoodleWallpaper(tint: Color = WhatsAppGreenBright): Modifier = drawBehind {
     val step = 74f
     val mark = tint.copy(alpha = 0.045f)
     var row = 0
@@ -71,10 +71,8 @@ fun Modifier.chatDoodleWallpaper(tint: Color = YawarBlue): Modifier = drawBehind
 }
 
 /**
- * The chat surface keeps its own palette rather than following the app's
- * material roles, because the WhatsApp look is deliberate. These are that
- * look's real dark-theme values, so the beige-and-green canvas does not glare
- * when the system switches to dark.
+ * The chat surface keeps its own light green palette so conversations stay
+ * readable and familiar even when the rest of the app theme changes.
  */
 @Immutable
 data class ChatPalette(
@@ -92,7 +90,7 @@ private val ChatLight = ChatPalette(
     bubbleOut = ChatBubbleOut,
     bubbleBorder = BorderColor,
     bubbleText = Ink,
-    wallpaperTint = YawarBlue
+    wallpaperTint = WhatsAppGreenBright
 )
 
 @Composable

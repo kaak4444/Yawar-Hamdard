@@ -123,18 +123,14 @@ fun ProfileScreen(
 
                     Column {
                         Text(
-                            text = profile?.fullName ?: "Ahmad Shah",
+                            text = profile?.fullName?.takeIf { it.isNotBlank() } ?: "Your account",
                             fontWeight = FontWeight.Bold,
                             color = Ink,
                             fontSize = 18.sp
                         )
-                        Text(
-                            text = profile?.phone ?: "+93 70 123 4567",
-                            color = Slate,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = "Member ID: ${profile?.organizationOrMemberId ?: "YHCS-CORP-9021"}",
+                        if (!profile?.phone.isNullOrBlank()) Text(profile?.phone.orEmpty(), color = Slate, fontSize = 12.sp)
+                        if (!profile?.organizationOrMemberId.isNullOrBlank()) Text(
+                            text = "Member ID: ${profile?.organizationOrMemberId}",
                             color = YawarBlue,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
@@ -315,7 +311,7 @@ fun ProfileScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text("HQ: Wazir Akbar Khan, District 10, Kabul, Afghanistan", color = Slate, fontSize = 12.sp)
                     Text("24/7 Coordination Desk: +93 707 438 303", color = Slate, fontSize = 12.sp)
-                    Text("Operations: callcenter@yawarconsulting.com", color = YawarBlue, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Text("Operations: info@yawarconsulting.com", color = YawarBlue, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 }
             }
         }

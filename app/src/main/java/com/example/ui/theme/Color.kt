@@ -48,16 +48,17 @@ val PurpleSoft = PaleBlue               // Blue tint for legacy purple accents
 val PurpleAccent = YawarBlueLight       // Blue replacement for the legacy purple accent
 val SlateSoft = Color(0xFFEDF2F7)       // Auth segmented-control track
 
-// WhatsApp-style conversation canvas. Deliberately off-brand: the chat surface
-// keeps a familiar messaging identity, so it is named here rather than scattered
-// as raw hexes through MessagesScreen.
-val ChatCanvas = Color.White            // White conversation background
-val ChatBubbleIn = Color(0xFFFFFFFF)    // Received message
-val ChatBubbleOut = PaleBlue            // Sent message with a light blue tint
-val ChatMeta = Color(0xFF66778A)        // Timestamps, unread counters
-val ChatTickRead = Color(0xFF1565C0)    // Blue double tick
-val ChatSystemBg = Color(0xFFFFF7ED)    // Encryption notice pill
-val ChatSystemBorder = Color(0xFFFED7AA)
-val ChatSystemText = Color(0xFFC2410C)
-val ChatSystemTextDeep = Color(0xFF7C2D12)
-val ChatOnlineDot = YawarBlueLight      // Blue presence indicator
+// Light WhatsApp-inspired palette, reserved for the conversation screens.
+val WhatsAppGreen = Color(0xFF075E54)
+val WhatsAppGreenBright = Color(0xFF128C7E)
+val WhatsAppPaleGreen = Color(0xFFE7F4EA)
+val ChatCanvas = Color(0xFFF4F7F4)
+val ChatBubbleIn = Color(0xFFFFFFFF)
+val ChatBubbleOut = Color(0xFFE2F7D9)
+val ChatMeta = Color(0xFF66778A)
+val ChatTickRead = WhatsAppGreenBright
+val ChatSystemBg = WhatsAppPaleGreen
+val ChatSystemBorder = Color(0xFFCDE7D1)
+val ChatSystemText = WhatsAppGreen
+val ChatSystemTextDeep = WhatsAppGreen
+val ChatOnlineDot = WhatsAppGreenBright

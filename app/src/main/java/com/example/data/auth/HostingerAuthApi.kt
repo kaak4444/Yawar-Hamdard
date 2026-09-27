@@ -33,17 +33,28 @@ internal data class AuthApiResult(
 internal data class AuthApiUser(
     val id: Long,
     val email: String,
-    val role: String
+    val role: String,
+    val full_name: String = "",
+    val phone: String = ""
 )
 
 internal data class CredentialsRequest(val email: String, val password: String)
+internal data class SignupRequest(
+    val email: String,
+    val password: String,
+    val role: String,
+    val full_name: String,
+    val phone: String,
+    val specialty: String = "",
+    val license_number: String = ""
+)
 internal data class EmailRequest(val email: String)
 internal data class CodeRequest(val email: String, val code: String)
 internal data class PasswordResetRequest(val email: String, val code: String, val password: String)
 
 internal interface HostingerAuthApi {
     @POST("auth.php?action=signup")
-    suspend fun signUp(@Body request: CredentialsRequest): Response<AuthApiResult>
+    suspend fun signUp(@Body request: SignupRequest): Response<AuthApiResult>
 
     @POST("auth.php?action=verify-signup")
     suspend fun verifySignUp(@Body request: CodeRequest): Response<AuthApiResult>

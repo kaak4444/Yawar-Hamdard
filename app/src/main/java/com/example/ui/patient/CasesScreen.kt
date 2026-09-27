@@ -138,7 +138,7 @@ fun CasesScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text("24/7 Medevac Operations Center", fontWeight = FontWeight.Bold, color = YawarNavy, fontSize = 13.sp)
-                            Text("Direct emergency case inquiries: callcenter@yawarconsulting.com", color = YawarBlue, fontSize = 11.sp)
+                            Text("Direct emergency case inquiries: info@yawarconsulting.com", color = YawarBlue, fontSize = 11.sp)
                         }
                     }
                 }

@@ -180,7 +180,7 @@ fun DoctorDetailDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = YawarBlue),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Make Appointment with ${doctor.name}", fontWeight = FontWeight.Bold)
+                Text("Ask Yawar to arrange care", fontWeight = FontWeight.Bold)
             }
         }
     )

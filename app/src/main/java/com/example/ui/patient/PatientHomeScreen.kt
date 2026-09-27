@@ -402,7 +402,7 @@ fun PatientHomeScreen(
             Column(modifier = Modifier.padding(horizontal = YawarSpacing.lg, vertical = YawarSpacing.md)) {
                 YawarSectionHeader(
                     title = "Doctor Profiles & Specialists",
-                    subtitle = "Verified specialist physicians with direct appointment booking",
+                    subtitle = "Browse doctors. Yawar coordinators arrange appointments after triage.",
                     actionLabel = "View All →",
                     onAction = { onNavigateToFindCare(0) }
                 )
@@ -415,7 +415,7 @@ fun PatientHomeScreen(
                         doctor = doc,
                         language = language,
                         onBook = {
-                            viewModel.startBooking(doc)
+                            viewModel.startBooking(specialty = doc.specialty)
                             onOpenBooking()
                         },
                         onClick = { viewModel.openDoctorDetail(doc) }
@@ -499,7 +499,7 @@ fun PatientHomeScreen(
                                 fontSize = 14.sp
                             )
                             Text(
-                                text = "24/7 Hotline: +93 707 438 303\ncallcenter@yawarconsulting.com",
+                                text = "24/7 Hotline: +93 707 438 303\ninfo@yawarconsulting.com",
                                 color = Slate,
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp
@@ -673,7 +673,7 @@ fun ServiceCardHome(
 }
 
 /**
- * Doctor Profile Card with DoctorAvatarBadge and direct booking
+ * Doctor Profile Card with a care-coordination request action
  */
 @Composable
 fun DoctorListCard(
@@ -790,7 +790,7 @@ fun DoctorListCard(
                     shape = MaterialTheme.shapes.small,
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                 ) {
-                    Text("Make Appointment", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Request care", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

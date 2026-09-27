@@ -21,6 +21,9 @@ interface YawarDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDoctors(doctors: List<DoctorEntity>)
 
+    @Query("DELETE FROM doctors")
+    suspend fun clearDoctors()
+
     @Update
     suspend fun updateDoctor(doctor: DoctorEntity)
 
@@ -33,6 +36,9 @@ interface YawarDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFacilities(facilities: List<FacilityEntity>)
+
+    @Query("DELETE FROM facilities")
+    suspend fun clearFacilities()
 
     // Appointments
     @Query("SELECT * FROM appointments ORDER BY createdAtTimestamp DESC")
@@ -49,6 +55,9 @@ interface YawarDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAppointments(appointments: List<AppointmentEntity>)
+
+    @Query("DELETE FROM appointments")
+    suspend fun clearAppointments()
 
     @Query("UPDATE appointments SET status = :status, coordinatorNotes = :notes WHERE id = :id")
     suspend fun updateAppointmentStatus(id: String, status: AppointmentStatus, notes: String)
@@ -92,10 +101,22 @@ interface YawarDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<MessageEntity>)
 
+    @Query("DELETE FROM messages")
+    suspend fun clearMessages()
+
     // User Profile
     @Query("SELECT * FROM user_profile WHERE id = 'current_user' LIMIT 1")
     fun getUserProfile(): Flow<UserProfileEntity?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUserProfile(profile: UserProfileEntity)
+
+    @Query("DELETE FROM user_profile")
+    suspend fun clearUserProfile()
+
+    @Query("DELETE FROM claims")
+    suspend fun clearClaims()
+
+    @Query("DELETE FROM coordination_cases")
+    suspend fun clearCases()
 }

@@ -75,6 +75,9 @@ import com.example.ui.theme.YawarBlue
 import com.example.ui.theme.YawarNavy
 import com.example.ui.theme.DangerBg
 import com.example.ui.viewmodel.YawarViewModel
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun BookingStepperScreen(
@@ -86,8 +89,8 @@ fun BookingStepperScreen(
     val step by viewModel.bookingStep.collectAsState()
     val draft by viewModel.bookingDraft.collectAsState()
     val language by viewModel.currentLanguage.collectAsState()
-    val doctors by viewModel.doctors.collectAsState()
     val facilities by viewModel.facilities.collectAsState()
+    val profile by viewModel.userProfile.collectAsState()
     val lastRef by viewModel.lastSubmittedReference.collectAsState()
 
     val totalSteps = 8
@@ -194,16 +197,16 @@ fun BookingStepperScreen(
                 .padding(16.dp)
         ) {
             when (step) {
-                1 -> Step1Who(draft = draft, onUpdate = viewModel::updateBookingDraft)
+                1 -> Step1Who(fullName = profile?.fullName.orEmpty(), phone = profile?.phone.orEmpty())
                 2 -> Step2WhatCare(draft = draft, onUpdate = viewModel::updateBookingDraft)
                 3 -> Step3Where(draft = draft, facilities = facilities, onUpdate = viewModel::updateBookingDraft)
-                4 -> Step4WhoDoctor(draft = draft, doctors = doctors, onUpdate = viewModel::updateBookingDraft)
+                4 -> Step4WhoDoctor(draft = draft)
                 5 -> Step5When(draft = draft, onUpdate = viewModel::updateBookingDraft)
                 6 -> Step6Coverage(draft = draft, onUpdate = viewModel::updateBookingDraft)
                 7 -> Step7ContactPref(draft = draft, onUpdate = viewModel::updateBookingDraft)
-                8 -> Step8ReviewConsent(draft = draft, language = language, onUpdate = viewModel::updateBookingDraft)
+                8 -> Step8ReviewConsent(draft = draft, patientName = profile?.fullName.orEmpty(), onUpdate = viewModel::updateBookingDraft)
                 9 -> Step9Confirmation(
-                    referenceId = lastRef ?: "YHCS-2026-9921",
+                    referenceId = lastRef ?: "—",
                     draft = draft,
                     language = language,
                     onViewAppointments = onViewAppointments
@@ -266,8 +269,8 @@ fun BookingStepperScreen(
 // Step 1: Who is the appointment for?
 @Composable
 private fun Step1Who(
-    draft: com.example.ui.viewmodel.BookingDraft,
-    onUpdate: ((com.example.ui.viewmodel.BookingDraft) -> com.example.ui.viewmodel.BookingDraft) -> Unit
+    fullName: String,
+    phone: String
 ) {
     Column {
         Text(
@@ -279,7 +282,7 @@ private fun Step1Who(
             )
         )
         Text(
-            text = "Appointments are scheduled strictly for the primary registered patient.",
+            text = "This care request is linked to the patient account you signed in with.",
             color = Slate,
             fontSize = 13.sp
         )
@@ -313,12 +316,11 @@ private fun Step1Who(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Ahmad Shah", fontWeight = FontWeight.Bold, color = Ink, fontSize = 16.sp)
+                            Text(fullName.ifBlank { "Signed-in patient" }, fontWeight = FontWeight.Bold, color = Ink, fontSize = 16.sp)
                             Spacer(modifier = Modifier.width(6.dp))
                             Icon(Icons.Default.CheckCircle, contentDescription = "Verified", tint = ClinicalGreen, modifier = Modifier.size(16.dp))
                         }
-                        Text("+93 70 123 4567 • Primary Account Holder", fontSize = 12.sp, color = Slate)
-                        Text("Member ID: YHCS-CORP-9021", fontSize = 12.sp, color = YawarBlue, fontWeight = FontWeight.Medium)
+                        Text(phone.ifBlank { "Add a phone number in your account profile" }, fontSize = 12.sp, color = Slate)
                     }
                 }
 
@@ -340,7 +342,7 @@ private fun Step1Who(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Verified Account Holder: Ahmad Shah. For security and clinical accuracy, medical consultations are strictly restricted to the primary registered patient.",
+                            text = "Your request is associated with this signed-in account. Keep your profile details current so the care team can contact you.",
                             fontSize = 12.sp,
                             color = YawarNavy,
                             lineHeight = 16.sp
@@ -454,244 +456,77 @@ private fun Step3Where(
     facilities: List<com.example.data.local.FacilityEntity>,
     onUpdate: ((com.example.ui.viewmodel.BookingDraft) -> com.example.ui.viewmodel.BookingDraft) -> Unit
 ) {
-    val provinces = listOf("Kabul", "Herat", "Balkh", "Kandahar", "Nangarhar")
-
+    val provinces = listOf("Kabul", "Herat", "Balkh", "Kandahar", "Nangarhar", "Khost")
     Column {
-        Text(
-            text = "3. Where should care be provided?",
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Bold,
-                color = Ink,
-                fontSize = 18.sp
-            )
-        )
-        Text(
-            text = "Select your province, preferred hospital facility, and visit format.",
-            color = Slate,
-            fontSize = 13.sp
-        )
-
+        Text("3. Where are you seeking care?", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp))
+        Text("Tell the call center your location and preferred visit format. You can choose a hospital after the care team reviews your request.", color = Slate, fontSize = 13.sp)
         Spacer(modifier = Modifier.height(14.dp))
-
         Text("Visit Format", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Ink)
         Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            VisitType.values().forEach { vType ->
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            VisitType.values().forEach { visitType ->
                 FilterChip(
-                    selected = draft.visitType == vType,
-                    onClick = { onUpdate { it.copy(visitType = vType) } },
-                    label = { Text(vType.labelEn, fontSize = 11.sp) },
+                    selected = draft.visitType == visitType,
+                    onClick = { onUpdate { it.copy(visitType = visitType) } },
+                    label = { Text(visitType.labelEn, fontSize = 11.sp) },
                     colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PaleBlue)
                 )
             }
         }
-
         Spacer(modifier = Modifier.height(14.dp))
-
         Text("Province", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Ink)
         Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            provinces.take(3).forEach { prov ->
-                FilterChip(
-                    selected = draft.province == prov,
-                    onClick = { onUpdate { it.copy(province = prov) } },
-                    label = { Text(prov, fontSize = 11.sp) }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Text("Preferred Hospital / Medical Center", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Ink)
-        Spacer(modifier = Modifier.height(6.dp))
-
-        facilities.forEach { fac ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clickable {
-                        onUpdate { it.copy(facilityId = fac.id, facilityName = fac.name) }
-                    },
-                shape = MaterialTheme.shapes.small,
-                colors = CardDefaults.cardColors(
-                    containerColor = if (draft.facilityName == fac.name) PaleBlue else Color.White
-                ),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (draft.facilityName == fac.name) YawarBlue else BorderColor
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(
-                        selected = draft.facilityName == fac.name,
-                        onClick = { onUpdate { it.copy(facilityId = fac.id, facilityName = fac.name) } },
-                        colors = RadioButtonDefaults.colors(selectedColor = YawarBlue)
+        provinces.chunked(3).forEach { row ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { province ->
+                    FilterChip(
+                        selected = draft.province == province,
+                        onClick = { onUpdate { it.copy(province = province) } },
+                        label = { Text(province, fontSize = 11.sp) }
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(fac.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Ink)
-                        Text("${fac.facilityType} • Approx. ${fac.distanceKm} km", fontSize = 11.sp, color = Slate)
-                    }
                 }
             }
+        }
+        Spacer(modifier = Modifier.height(14.dp))
+        Card(colors = CardDefaults.cardColors(containerColor = PaleBlue), shape = MaterialTheme.shapes.small) {
+            Text(
+                "Hospital referrals are sent after a call-center review. You will see the hospital name and profile before approving the referral.",
+                modifier = Modifier.padding(14.dp), color = YawarNavy, fontSize = 13.sp
+            )
         }
     }
 }
 
-// Step 4: Who?
+// Step 4: Doctor matching
 @Composable
 private fun Step4WhoDoctor(
-    draft: com.example.ui.viewmodel.BookingDraft,
-    doctors: List<com.example.data.local.DoctorEntity>,
-    onUpdate: ((com.example.ui.viewmodel.BookingDraft) -> com.example.ui.viewmodel.BookingDraft) -> Unit
+    draft: com.example.ui.viewmodel.BookingDraft
 ) {
     Column {
+        Text("4. Doctor matching", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, color = Ink, fontSize = 18.sp))
+        Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "4. Select Provider",
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Bold,
-                color = Ink,
-                fontSize = 18.sp
-            )
+            "A Yawar care coordinator reviews your symptoms and finds an appropriate doctor after speaking with you. This request does not book a doctor directly.",
+            color = Slate, fontSize = 13.sp
         )
-        Text(
-            text = "Choose a specific verified consultant or allow YHCS to assign the first suitable specialist.",
-            color = Slate,
-            fontSize = 13.sp
-        )
-
         Spacer(modifier = Modifier.height(14.dp))
-
-        // First Suitable Doctor Option
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable {
-                    onUpdate {
-                        it.copy(
-                            isFirstSuitableDoctor = true,
-                            doctorId = "",
-                            doctorName = "First Available Specialist"
-                        )
-                    }
-                },
-            shape = MaterialTheme.shapes.small,
-            colors = CardDefaults.cardColors(
-                containerColor = if (draft.isFirstSuitableDoctor) PaleGreen else Color.White
-            ),
-            border = androidx.compose.foundation.BorderStroke(
-                1.dp,
-                if (draft.isFirstSuitableDoctor) ClinicalGreen else BorderColor
+        Card(colors = CardDefaults.cardColors(containerColor = PaleGreen), shape = MaterialTheme.shapes.small) {
+            Text(
+                "Your selected service: ${draft.specialty}\n\nThe call center can message or call you if they need more information.",
+                modifier = Modifier.padding(14.dp), color = DeepGreen, fontSize = 13.sp
             )
-        ) {
-            Row(
-                modifier = Modifier.padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(
-                    selected = draft.isFirstSuitableDoctor,
-                    onClick = {
-                        onUpdate {
-                            it.copy(
-                                isFirstSuitableDoctor = true,
-                                doctorId = "",
-                                doctorName = "First Available Specialist"
-                            )
-                        }
-                    },
-                    colors = RadioButtonDefaults.colors(selectedColor = ClinicalGreen)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(
-                        "First Suitable Verified Doctor",
-                        fontWeight = FontWeight.Bold,
-                        color = Ink,
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        "Fastest confirmation • YHCS Coordinator matches nearest available doctor",
-                        fontSize = 12.sp,
-                        color = Slate
-                    )
-                }
-            }
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Text("Or Choose a Specific Specialist", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Ink)
-        Spacer(modifier = Modifier.height(6.dp))
-
-        doctors.filter { it.specialty.contains(draft.specialty, ignoreCase = true) || draft.specialty == "Cardiology" }
-            .take(3).forEach { doc ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clickable {
-                            onUpdate {
-                                it.copy(
-                                    isFirstSuitableDoctor = false,
-                                    doctorId = doc.id,
-                                    doctorName = doc.name
-                                )
-                            }
-                        },
-                    shape = MaterialTheme.shapes.small,
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (!draft.isFirstSuitableDoctor && draft.doctorId == doc.id) PaleBlue else Color.White
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(
-                        1.dp,
-                        if (!draft.isFirstSuitableDoctor && draft.doctorId == doc.id) YawarBlue else BorderColor
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = !draft.isFirstSuitableDoctor && draft.doctorId == doc.id,
-                            onClick = {
-                                onUpdate {
-                                    it.copy(
-                                        isFirstSuitableDoctor = false,
-                                        doctorId = doc.id,
-                                        doctorName = doc.name
-                                    )
-                                }
-                            },
-                            colors = RadioButtonDefaults.colors(selectedColor = YawarBlue)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(doc.name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Ink)
-                            Text("${doc.subspecialty} • ${doc.hospitalAffiliation}", fontSize = 11.sp, color = Slate)
-                        }
-                    }
-                }
-            }
     }
 }
-
 // Step 5: When?
 @Composable
 private fun Step5When(
     draft: com.example.ui.viewmodel.BookingDraft,
     onUpdate: ((com.example.ui.viewmodel.BookingDraft) -> com.example.ui.viewmodel.BookingDraft) -> Unit
 ) {
-    val dates = listOf("Tomorrow, 23 Sep 2026", "Thursday, 24 Sep 2026", "Saturday, 26 Sep 2026", "Sunday, 27 Sep 2026")
+    val dates = (1..4).map { offset ->
+        Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, offset) }.time
+    }.map { SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()).format(it) }
     val slots = listOf("09:30 AM", "11:00 AM", "02:30 PM", "04:00 PM")
 
     Column {
@@ -804,9 +639,11 @@ private fun Step6Coverage(
             value = draft.corporateMemberId,
             onValueChange = { mem -> onUpdate { it.copy(corporateMemberId = mem) } },
             label = { Text("YHCS / Corporate Health Member ID") },
-            placeholder = { Text("e.g. YHCS-CORP-9021") },
+            placeholder = { Text("e.g. YH-BIMA-0001") },
             modifier = Modifier.fillMaxWidth()
         )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text("Example Bima IDs (demo only): YH-BIMA-0001 · YH-BIMA-0002 · YH-BIMA-0003 · YH-BIMA-0004. These are not verified coverage numbers.", fontSize = 11.sp, color = Slate)
 
         Spacer(modifier = Modifier.height(14.dp))
 
@@ -926,7 +763,7 @@ private fun Step7ContactPref(
                 Icon(Icons.Default.Info, contentDescription = "Notice", tint = YawarNavy, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "A minimal-data alert is dispatched to callcenter@yawarconsulting.com upon submission.",
+                    text = "The request goes to the Yawar call-center queue for review before a hospital referral.",
                     fontSize = 11.sp,
                     color = YawarNavy
                 )
@@ -939,7 +776,7 @@ private fun Step7ContactPref(
 @Composable
 private fun Step8ReviewConsent(
     draft: com.example.ui.viewmodel.BookingDraft,
-    language: AppLanguage,
+    patientName: String,
     onUpdate: ((com.example.ui.viewmodel.BookingDraft) -> com.example.ui.viewmodel.BookingDraft) -> Unit
 ) {
     Column {
@@ -965,12 +802,12 @@ private fun Step8ReviewConsent(
             border = androidx.compose.foundation.BorderStroke(1.dp, BorderColor)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                ReviewRow(label = "Patient", value = "Ahmad Shah (Primary Patient)")
+                ReviewRow(label = "Patient", value = patientName.ifBlank { "Signed-in patient" })
                 ReviewRow(label = "Specialty", value = draft.specialty)
                 ReviewRow(label = "Urgency", value = draft.urgency)
-                ReviewRow(label = "Facility", value = draft.facilityName.ifBlank { "French Medical Institute for Mothers & Children (FMIC)" })
-                ReviewRow(label = "Provider", value = draft.doctorName.ifBlank { "First Available Specialist" })
-                ReviewRow(label = "Date & Slot", value = "${draft.appointmentDate} • ${draft.timeSlot}")
+                ReviewRow(label = "Preferred date and time", value = "${draft.appointmentDate} • ${draft.timeSlot}")
+                ReviewRow(label = "Hospital", value = "Chosen after call-center review")
+                ReviewRow(label = "Doctor", value = "Assigned after review if needed")
                 ReviewRow(label = "Format", value = draft.visitType.labelEn)
                 ReviewRow(label = "Member ID", value = draft.corporateMemberId)
                 ReviewRow(label = "Contact Via", value = draft.contactPreference)
@@ -992,7 +829,7 @@ private fun Step8ReviewConsent(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "I consent to the confidential processing of my medical appointment information by Yawar Hamdard Health Consulting Services in accordance with healthcare privacy standards.",
+                text = "I agree that Yawar may process this care request and share the necessary details with the hospital I approve.",
                 fontSize = 11.sp,
                 color = Ink,
                 lineHeight = 15.sp
@@ -1058,7 +895,7 @@ private fun Step9Confirmation(
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "Unique Booking Reference",
+            text = "Care request reference",
             color = Slate,
             fontSize = 12.sp
         )
@@ -1086,7 +923,7 @@ private fun Step9Confirmation(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("Status", color = Slate, fontSize = 12.sp)
-                    Text("Under Review", color = YawarBlue, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text("Received", color = YawarBlue, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -1095,8 +932,8 @@ private fun Step9Confirmation(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Doctor", color = Slate, fontSize = 12.sp)
-                    Text(draft.doctorName.ifBlank { "First Available Specialist" }, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    Text("Next step", color = Slate, fontSize = 12.sp)
+                    Text("Call-center review", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 }
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -1105,7 +942,7 @@ private fun Step9Confirmation(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Scheduled Slot", color = Slate, fontSize = 12.sp)
+                    Text("Preferred time", color = Slate, fontSize = 12.sp)
                     Text("${draft.appointmentDate} • ${draft.timeSlot}", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                 }
             }
@@ -1130,7 +967,7 @@ private fun Step9Confirmation(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Operational dispatch logged to callcenter@yawarconsulting.com. You will receive final clinic confirmation shortly.",
+                    text = "Your request is in the Yawar call-center queue. Follow updates in My care requests or message your care team there.",
                     fontSize = 11.sp,
                     color = YawarNavy,
                     lineHeight = 15.sp

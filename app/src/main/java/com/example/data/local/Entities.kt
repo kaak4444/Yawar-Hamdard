@@ -1,6 +1,7 @@
 package com.example.data.local
 
 import androidx.room.Entity
+import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
 import com.example.data.model.AppointmentStatus
 import com.example.data.model.ClaimStatus
@@ -46,6 +47,7 @@ data class FacilityEntity(
     val hasEmergency24h: Boolean,
     val emergencyPhone: String,
     val contactPhone: String,
+    @ColumnInfo(defaultValue = "''") val whatsappPhone: String = "",
     val departments: List<String>,
     val operatingHours: String,
     val acceptedProgrammes: List<String>,
@@ -133,13 +135,13 @@ data class MessageEntity(
 @Entity(tableName = "user_profile")
 data class UserProfileEntity(
     @PrimaryKey val id: String = "current_user",
-    val fullName: String = "Ahmad Shah",
-    val phone: String = "+93 70 123 4567",
-    val email: String = "ahmad.shah@example.af",
-    val province: String = "Kabul",
-    val district: String = "District 10, Shahr-e-Naw",
+    val fullName: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val province: String = "",
+    val district: String = "",
     val preferredLanguage: String = "en",
-    val emergencyContact: String = "+93 79 988 7766 (Brother)",
-    val organizationOrMemberId: String = "YHCS-CORP-9021",
+    val emergencyContact: String = "",
+    val organizationOrMemberId: String = "",
     val lowBandwidthMode: Boolean = false
 )

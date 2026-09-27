@@ -1,21 +1,46 @@
-# Hostinger auth API
+# Hostinger authentication and care workflow
 
-This PHP API replaces Firebase Authentication for the app's email/password sign-in. It sends six-digit email verification and password-reset codes through Hostinger SMTP using `no-reply@yawarconsulting.com`.
+This backend is the shared service for the Android app. It stores account profiles, patient care requests, role-scoped messages, hospital referrals, private hospital documents, and monthly hospital payouts in one dedicated Yawar app database. The Android app never connects directly to MySQL.
 
-## Before it can go live
+## Server setup
 
-1. Create the `no-reply@yawarconsulting.com` mailbox in Hostinger Email. The sender must be a real Hostinger mailbox. Keep its password private; enter it only into the server-side auth configuration.
-2. Create a **new, dedicated MySQL database and user** in hPanel. Do not reuse the WordPress database.
-3. Import `schema.sql` into that new database using phpMyAdmin.
-4. Copy `auth-config.example.php` to `public_html/.private/auth-config.php` and set the new database credentials, a random OTP pepper of at least 32 bytes, and the mailbox password. The existing `.private` folder is intended for server-only files; preserve its deny-access rule.
-5. Upload `api/.htaccess`, `api/v1/.htaccess`, and `api/v1/auth.php` under `public_html/api/`. Do not upload `auth-config.example.php` as the live config.
-6. Keep the domain on HTTPS. SMTP is configured for `smtp.hostinger.com` on port 465 with implicit TLS; the sender and SMTP username must both be `no-reply@yawarconsulting.com`.
+Complete these steps on the Hostinger account before using real accounts or patient records:
 
-The app API base URL is `https://yawarconsulting.com/api/v1/`. Endpoints accept JSON and return generic messages for registration and password-reset requests. Verification codes expire after 10 minutes, are single use, are stored as keyed hashes, have a five-attempt limit, and are subject to resend and request limits. Passwords use PHP `password_hash`; bearer session tokens are random, stored hashed in MySQL, expire after 30 days, and are encrypted with Android Keystore on the device.
+1. Create or confirm the `no-reply@yawarconsulting.com` mailbox. The sender and SMTP username must match.
+2. Create a **dedicated app MySQL database and user** in hPanel. Do not use the WordPress database.
+3. Import `schema.sql`, then `workflow-schema.sql`, then `hospital-catalog-seed.sql`, in that order. The workflow SQL contains an `ALTER TABLE`; run it once only after taking a database backup.
+4. Copy `auth-config.example.php` to `public_html/.private/auth-config.php`. Set the dedicated database credentials, a random OTP pepper of at least 32 bytes, the Hostinger mailbox password, and an absolute `documents_path` outside `public_html`.
+5. Keep `.private` inaccessible over HTTP. Patient files must stay in the configured private directory, outside the website document root.
+6. Upload `api/.htaccess`, `api/v1/.htaccess`, and `api/v1/auth.php` under `public_html/api/`. Do not upload the example config as the live config.
+7. Upload `wordpress/yh-care-workflow/yh-care-workflow.php` as the `yh-care-workflow` WordPress plugin and activate it. It reads the same private config and app database as the auth API.
+8. Put real contact email addresses on hospital records and create each hospital login in the manager dashboard. The imported workbook has hospital contact details and logos, but no contact email addresses.
+9. Store `provision-internal-users.php` privately beside the live config, run it from Hostinger Terminal (CLI only), then remove the provisioning script from the server. It creates the one manager and four call-center accounts with random unusable passwords; each account owner must use **Forgot password** to set their own password.
+10. Configure a real Hostinger cron job to invoke WordPress `wp-cron.php` regularly (for example every 15 minutes). WordPress's visitor-triggered scheduler alone does not guarantee daily reminder delivery. PHP upload limits must allow a 15 MB file plus multipart overhead.
 
-## Account and data migration notes
+The Android clients use `https://yawarconsulting.com/api/v1/` for authentication and `https://yawarconsulting.com/wp-json/yh/v1/` for the workflow. Keep both on HTTPS.
 
-- Firebase passwords cannot be exported for import into Hostinger. Current Firebase users must register again and verify their email in the new system.
-- New public registrations always receive the `patient` role. Grant `doctor` or `admin` only to authorized staff through a controlled database operation; never accept a role from the signup form.
-- This API covers authentication, email verification, password reset, and sessions. Hospital/doctor catalogs and patient appointments, claims, and messages are still stored locally or seeded as demo records by the current app. They have **not** been moved to this Hostinger database or made suitable for real patient records.
-- Keep all database and SMTP credentials out of GitHub, Android resources, and app requests. The Android app talks only to the HTTPS API; it never connects to MySQL or SMTP directly.
+Authenticated patient requests, messages, and the current user's profile are held in app memory while signed in and cleared on logout; the app does not write those workflow records to the local Room database. The hospital and doctor directory is cached locally. Keep account data out of screenshots and device backups when operating the app on shared devices.
+
+## Account roles
+
+- Public sign-up accepts patient and doctor accounts only.
+- The manager identity is restricted to `m.ibrahim@yawarconsulting.com` by the provisioning script and API.
+- Call-center access is restricted to the four allowlisted addresses in the provisioning script and API.
+- Hospital accounts are created by the manager and are scoped to the assigned hospital.
+- Doctors only see requests assigned to their own verified doctor profile. The manager or call center must assign a verified doctor after the hospital referral exists.
+
+Passwords and SMTP/database credentials are not stored in this repository. The supplied staff passwords were deliberately not copied into code; set each account password privately through the emailed reset flow.
+
+## Workflow behavior and limits
+
+- Patients create a request; the call center reviews it; then the patient or call center can route it to a hospital.
+- In-app care messages are shared with the patient and staff whose roles have access to that request.
+- Hospital accounts can upload PDF, JPG, and PNG records up to 15 MB each. Documents are served only through an authenticated role-checked endpoint and stored outside the public web root.
+- Referral and daily pending-record emails use Hostinger SMTP. A daily reminder is recorded only after the mailer reports success, and reminders stop after the hospital uploads a document or completes the referral. Reliable scheduling also requires the Hostinger cron job above.
+- The WhatsApp button opens a message draft in WhatsApp; it cannot send automatically without WhatsApp Business API credentials and the recipient's required opt-in. A staff member must press Send in WhatsApp.
+- The call button opens the phone dialer. In-app internet calling would need a voice service and credentials that are not configured here.
+- The payout screen records the amount, month, due date, notes, and status supplied by staff; it does not initiate bank transfers.
+
+## Local checks
+
+The PHP files can be syntax-checked with `php -l`. No credentials or live database are needed to inspect or edit this source. The workflow becomes live only after the Hostinger migrations, auth API, SMTP configuration, plugin, staff provisioning, and cron setup are complete.

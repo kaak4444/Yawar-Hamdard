@@ -1,16 +1,36 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.auth.AuthApiException
 import com.example.data.auth.AuthTokenStore
+import com.example.data.auth.AssignDoctorRequest
 import com.example.data.auth.CodeRequest
 import com.example.data.auth.CredentialsRequest
+import com.example.data.auth.DoctorInput
+import com.example.data.auth.DoctorRequestUpdate
 import com.example.data.auth.EmailRequest
 import com.example.data.auth.HostingerAuthApi
+import com.example.data.auth.HostingerWorkflowApi
+import com.example.data.auth.HospitalInput
+import com.example.data.auth.HospitalUserInput
+import com.example.data.auth.NewCareRequest
 import com.example.data.auth.PasswordResetRequest
+import com.example.data.auth.PaymentInput
+import com.example.data.auth.ReviewRequest
+import com.example.data.auth.RouteRequest
+import com.example.data.auth.SignupRequest
+import com.example.data.auth.SendCaseMessage
+import com.example.data.auth.WorkflowDoctor
+import com.example.data.auth.WorkflowHospital
+import com.example.data.auth.WorkflowMessage
+import com.example.data.auth.WorkflowPayment
+import com.example.data.auth.WorkflowRequest
 import com.example.data.auth.requireSuccessfulBody
+import com.example.data.auth.requireWorkflowSuccess
 import com.example.data.local.AppointmentEntity
 import com.example.data.local.ClaimEntity
 import com.example.data.local.CoordinationCaseEntity
@@ -34,8 +54,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.Locale
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import kotlin.random.Random
 
 data class BookingDraft(
@@ -50,19 +81,24 @@ data class BookingDraft(
     val doctorId: String = "",
     val doctorName: String = "",
     val isFirstSuitableDoctor: Boolean = true,
-    val appointmentDate: String = "24 Sep 2026",
+    val appointmentDate: String = SimpleDateFormat("EEE, dd MMM yyyy", Locale.getDefault()).format(
+        Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }.time
+    ),
     val timeSlot: String = "10:00 AM",
-    val corporateMemberId: String = "YHCS-CORP-9021",
+    val corporateMemberId: String = "",
     val attachedDocs: List<String> = emptyList(),
     val contactPreference: String = "WhatsApp & In-App",
-    val consentGiven: Boolean = true
+    val consentGiven: Boolean = false
 )
 
 class YawarViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: YawarRepository
     private val authApi = HostingerAuthApi.create()
+    private val workflowApi = HostingerWorkflowApi.create()
     private val authTokenStore = AuthTokenStore(application)
+    private var workflowRefreshJob: Job? = null
+    private var workflowErrorShown = false
 
     // Role & Language State
     private val _authLoading = MutableStateFlow(false)
@@ -86,8 +122,13 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         repository = YawarRepository(database.yawarDao())
         viewModelScope.launch {
             repository.checkAndSeedDatabase()
+            val cleanup = application.getSharedPreferences("yawar_data_migration", android.content.Context.MODE_PRIVATE)
+            if (!cleanup.getBoolean("legacy_demo_records_removed_v1", false)) {
+                repository.clearAccountPrivateData()
+                cleanup.edit().putBoolean("legacy_demo_records_removed_v1", true).apply()
+            }
+            restoreHostingerSession()
         }
-        restoreHostingerSession()
     }
 
     fun signIn(email: String, password: String) {
@@ -98,11 +139,34 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun signUp(email: String, password: String) {
+    fun signUp(
+        email: String,
+        password: String,
+        role: UserRole,
+        fullName: String,
+        phone: String,
+        specialty: String,
+        licenseNumber: String
+    ) {
         if (email.isBlank() || !email.contains('@')) return setAuthError("Enter a valid email address.")
         if (password.length < 12) return setAuthError("Use a password with at least 12 characters.")
+        if (role !in setOf(UserRole.PATIENT, UserRole.DOCTOR)) return setAuthError("Choose patient or doctor registration.")
+        if (fullName.isBlank() || phone.isBlank()) return setAuthError("Enter your name and phone number.")
+        if (role == UserRole.DOCTOR && (specialty.isBlank() || licenseNumber.isBlank())) {
+            return setAuthError("Doctors must enter a specialty and license number.")
+        }
         performAuth {
-            val response = authApi.signUp(CredentialsRequest(normalizeEmail(email), password))
+            val response = authApi.signUp(
+                SignupRequest(
+                    email = normalizeEmail(email),
+                    password = password,
+                    role = if (role == UserRole.DOCTOR) "doctor" else "patient",
+                    full_name = fullName.trim(),
+                    phone = phone.trim(),
+                    specialty = specialty.trim(),
+                    license_number = licenseNumber.trim()
+                )
+            )
             val result = response.requireSuccessfulBody()
             _emailVerificationPending.value = true
             _passwordResetPending.value = false
@@ -207,11 +271,23 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     private fun applyUser(user: com.example.data.auth.AuthApiUser?) {
         val role = when (user?.role?.lowercase(Locale.ROOT)) {
             "doctor" -> UserRole.DOCTOR
+            "call_center" -> UserRole.CALL_CENTER
+            "hospital" -> UserRole.HOSPITAL
             "admin" -> UserRole.ADMIN
             else -> UserRole.PATIENT
         }
         _currentRole.value = role
         _isUserLoggedIn.value = user != null
+        if (user != null) {
+            _userProfile.value = UserProfileEntity(
+                fullName = user.full_name,
+                phone = user.phone,
+                email = user.email
+            )
+            authTokenStore.read()?.let(::startWorkflowPolling)
+        } else {
+            workflowRefreshJob?.cancel()
+        }
     }
 
     private fun normalizeEmail(email: String): String = email.trim().lowercase(Locale.ROOT)
@@ -226,6 +302,13 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         authTokenStore.clear()
         _isUserLoggedIn.value = false
         _currentRole.value = UserRole.PATIENT
+        workflowRefreshJob?.cancel()
+        _hospitalPayments.value = emptyList()
+        _managedDoctors.value = emptyList()
+        _appointments.value = emptyList()
+        _messages.value = emptyList()
+        _userProfile.value = null
+        _selectedCareRequestId.value = ""
         _emailVerificationPending.value = false
         _passwordResetPending.value = false
         if (token != null) {
@@ -233,6 +316,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { authApi.signOut("Bearer $token") }
             }
         }
+        viewModelScope.launch(Dispatchers.IO) { repository.clearAccountPrivateData() }
     }
 
     private val _currentLanguage = MutableStateFlow(AppLanguage.ENGLISH)
@@ -257,8 +341,8 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     val facilities: StateFlow<List<FacilityEntity>> = repository.allFacilities
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val appointments: StateFlow<List<AppointmentEntity>> = repository.allAppointments
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _appointments = MutableStateFlow<List<AppointmentEntity>>(emptyList())
+    val appointments: StateFlow<List<AppointmentEntity>> = _appointments.asStateFlow()
 
     val claims: StateFlow<List<ClaimEntity>> = repository.allClaims
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -266,11 +350,260 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     val cases: StateFlow<List<CoordinationCaseEntity>> = repository.allCases
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val messages: StateFlow<List<MessageEntity>> = repository.allMessages
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val _messages = MutableStateFlow<List<MessageEntity>>(emptyList())
+    val messages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
 
-    val userProfile: StateFlow<UserProfileEntity?> = repository.userProfile
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    private val _userProfile = MutableStateFlow<UserProfileEntity?>(null)
+    val userProfile: StateFlow<UserProfileEntity?> = _userProfile.asStateFlow()
+
+    private val _hospitalPayments = MutableStateFlow<List<WorkflowPayment>>(emptyList())
+    val hospitalPayments: StateFlow<List<WorkflowPayment>> = _hospitalPayments.asStateFlow()
+
+    private val _managedDoctors = MutableStateFlow<List<WorkflowDoctor>>(emptyList())
+    val managedDoctors: StateFlow<List<WorkflowDoctor>> = _managedDoctors.asStateFlow()
+
+    private val _selectedCareRequestId = MutableStateFlow("")
+    val selectedCareRequestId: StateFlow<String> = _selectedCareRequestId.asStateFlow()
+
+    private val _workflowRefreshing = MutableStateFlow(false)
+    val workflowRefreshing: StateFlow<Boolean> = _workflowRefreshing.asStateFlow()
+
+    fun selectCareRequest(id: String) { _selectedCareRequestId.value = id }
+
+    fun refreshWorkflow() {
+        val token = authTokenStore.read() ?: return
+        viewModelScope.launch {
+            try {
+                refreshWorkflowOnce(token)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "Could not refresh shared care records.")
+            }
+        }
+    }
+
+    private fun startWorkflowPolling(token: String) {
+        workflowRefreshJob?.cancel()
+        workflowErrorShown = false
+        workflowRefreshJob = viewModelScope.launch {
+            while (isActive && _isUserLoggedIn.value && authTokenStore.read() == token) {
+                try {
+                    refreshWorkflowOnce(token)
+                    workflowErrorShown = false
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    if (!workflowErrorShown) {
+                        showSnackbar("Shared care service is unavailable. Your account is still signed in.")
+                        workflowErrorShown = true
+                    }
+                }
+                delay(30_000)
+            }
+        }
+    }
+
+    private suspend fun refreshWorkflowOnce(token: String) {
+        _workflowRefreshing.value = true
+        try {
+            val dashboard = workflowApi.dashboard("Bearer $token").requireWorkflowSuccess().data
+                ?: throw IllegalStateException("The care service returned no dashboard data.")
+            val remoteRequests = dashboard.requests.map(::toAppointment)
+            val remoteMessages = dashboard.messages.map(::toMessage)
+            withContext(Dispatchers.IO) {
+                repository.replaceHospitals(dashboard.hospitals.map(::toFacility))
+                repository.replaceDoctors(dashboard.doctors.map(::toDoctor))
+            }
+            _appointments.value = remoteRequests
+            _messages.value = remoteMessages
+            dashboard.profile?.let { profile ->
+                _userProfile.value = UserProfileEntity(
+                    fullName = profile.fullName,
+                    phone = profile.phone,
+                    email = profile.email
+                )
+            }
+            _hospitalPayments.value = dashboard.payments
+            _managedDoctors.value = dashboard.doctors
+        } finally {
+            _workflowRefreshing.value = false
+        }
+    }
+
+    private fun toAppointment(request: WorkflowRequest) = AppointmentEntity(
+        id = request.id,
+        patientName = request.patientName,
+        patientPhone = request.patientPhone,
+        specialty = request.specialty,
+        reasonForCare = request.reasonForCare,
+        symptomsSummary = request.symptomsSummary,
+        urgency = request.urgency,
+        visitType = runCatching { VisitType.valueOf(request.visitType) }.getOrDefault(VisitType.IN_PERSON),
+        province = request.province,
+        facilityId = request.facilityId,
+        facilityName = request.facilityName,
+        doctorId = request.doctorId,
+        doctorName = request.doctorName,
+        appointmentDate = request.appointmentDate,
+        timeSlot = request.timeSlot,
+        attachedDocuments = request.attachedDocuments,
+        status = runCatching { AppointmentStatus.valueOf(request.status) }.getOrDefault(AppointmentStatus.SUBMITTED),
+        coordinatorNotes = request.coordinatorNotes,
+        createdAtTimestamp = request.createdAtTimestamp
+    )
+
+    private fun toMessage(message: WorkflowMessage) = MessageEntity(
+        id = message.id,
+        senderRole = message.senderRole,
+        senderName = message.senderName,
+        content = message.content,
+        timestamp = message.timestamp,
+        isRead = message.isRead,
+        conversationId = message.conversationId,
+        messageType = message.messageType,
+        attachmentName = message.attachmentName,
+        attachmentSize = message.attachmentSize,
+        voiceDurationSec = message.voiceDurationSec,
+        deliveryStatus = message.deliveryStatus
+    )
+
+    private fun toFacility(hospital: WorkflowHospital) = FacilityEntity(
+        id = hospital.id,
+        name = hospital.name,
+        facilityType = hospital.facilityType,
+        province = hospital.province,
+        district = hospital.district,
+        address = hospital.address,
+        distanceKm = hospital.distanceKm,
+        travelTimeMin = hospital.travelTimeMin,
+        hasEmergency24h = hospital.hasEmergency24h,
+        emergencyPhone = hospital.emergencyPhone,
+        contactPhone = hospital.contactPhone,
+        whatsappPhone = hospital.whatsappPhone,
+        departments = hospital.departments,
+        operatingHours = hospital.operatingHours,
+        acceptedProgrammes = hospital.acceptedProgrammes,
+        latitude = hospital.latitude,
+        longitude = hospital.longitude,
+        verificationStatus = hospital.verificationStatus,
+        mapSearchUrl = hospital.mapSearchUrl,
+        logoFile = hospital.logoFile
+    )
+
+    private fun toDoctor(doctor: WorkflowDoctor) = DoctorEntity(
+        id = doctor.id,
+        name = doctor.name,
+        specialty = doctor.specialty,
+        subspecialty = doctor.subspecialty,
+        hospitalAffiliation = doctor.hospitalAffiliation,
+        province = doctor.province,
+        city = doctor.city,
+        languages = doctor.languages,
+        yearsExperience = doctor.yearsExperience,
+        earliestAvailable = doctor.earliestAvailable,
+        inPersonAvailable = doctor.inPersonAvailable,
+        virtualAvailable = doctor.virtualAvailable,
+        homeVisitAvailable = doctor.homeVisitAvailable,
+        consultationFeeAf = doctor.consultationFeeAf,
+        isVerified = doctor.isVerified,
+        distanceKm = doctor.distanceKm,
+        education = doctor.education,
+        licenseNo = doctor.licenseNo,
+        weeklySchedule = doctor.weeklySchedule,
+        preparationNote = doctor.preparationNote,
+        verificationStatus = doctor.verificationStatus,
+        photoFile = doctor.photoFile,
+        bio = doctor.bio
+    )
+
+    private fun workflowAction(action: suspend (String) -> Unit) {
+        val token = authTokenStore.read()
+        if (token == null) return showSnackbar("Sign in again to continue.")
+        viewModelScope.launch {
+            try {
+                action(token)
+                refreshWorkflowOnce(token)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "The care service could not complete this action.")
+            }
+        }
+    }
+
+    fun reviewCareRequest(id: String, notes: String = "Reviewed by Yawar call center.") = workflowAction { token ->
+        workflowApi.reviewRequest("Bearer $token", id, ReviewRequest(notes)).requireWorkflowSuccess()
+    }
+
+    fun routeCareRequest(id: String, hospitalId: String) {
+        val parsedId = hospitalId.toLongOrNull() ?: return showSnackbar("That hospital is not available for referrals.")
+        workflowAction { token -> workflowApi.routeRequest("Bearer $token", id, RouteRequest(parsedId)).requireWorkflowSuccess() }
+    }
+
+    fun assignDoctorToRequest(requestId: String, doctorId: String) {
+        val parsedId = doctorId.toLongOrNull() ?: return showSnackbar("Choose a verified doctor.")
+        workflowAction { token ->
+            workflowApi.assignDoctor("Bearer $token", requestId, AssignDoctorRequest(parsedId)).requireWorkflowSuccess()
+        }
+    }
+
+    fun saveHospitalPayout(input: PaymentInput) = workflowAction { token ->
+        workflowApi.savePayment("Bearer $token", input).requireWorkflowSuccess()
+    }
+
+    fun addHospital(input: HospitalInput) = workflowAction { token ->
+        workflowApi.createHospital("Bearer $token", input).requireWorkflowSuccess()
+    }
+
+    fun removeHospital(id: String) {
+        val parsedId = id.toLongOrNull() ?: return
+        workflowAction { token -> workflowApi.deactivateHospital("Bearer $token", parsedId).requireWorkflowSuccess() }
+    }
+
+    fun addHospitalAccount(hospitalId: String, email: String, name: String, phone: String) {
+        val parsedId = hospitalId.toLongOrNull() ?: return showSnackbar("Choose a saved hospital first.")
+        workflowAction { token ->
+            workflowApi.createHospitalUser("Bearer $token", HospitalUserInput(parsedId, email.trim(), name.trim(), phone.trim())).requireWorkflowSuccess()
+        }
+    }
+
+    fun addDoctor(email: String, name: String, phone: String, specialty: String, licenseNumber: String, hospitalId: String, photoUrl: String) {
+        workflowAction { token ->
+            workflowApi.createDoctor(
+                "Bearer $token",
+                DoctorInput(email.trim(), name.trim(), phone.trim(), specialty.trim(), licenseNumber.trim(), hospitalId.toLongOrNull(), photoUrl.trim())
+            ).requireWorkflowSuccess()
+        }
+    }
+
+    fun setDoctorVerified(id: String, verified: Boolean) {
+        val parsedId = id.toLongOrNull() ?: return
+        workflowAction { token ->
+            workflowApi.verifyDoctor("Bearer $token", parsedId, mapOf("verified" to verified)).requireWorkflowSuccess()
+        }
+    }
+
+    fun removeDoctor(id: String) {
+        val parsedId = id.toLongOrNull() ?: return
+        workflowAction { token -> workflowApi.deactivateDoctor("Bearer $token", parsedId).requireWorkflowSuccess() }
+    }
+
+    fun uploadHospitalDocument(requestId: String, resolver: ContentResolver, uri: Uri) {
+        workflowAction { token ->
+            val mimeType = resolver.getType(uri) ?: "application/octet-stream"
+            val fileName = resolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(0) else null
+            } ?: "hospital-record"
+            val bytes = withContext(Dispatchers.IO) { resolver.openInputStream(uri)?.use { it.readBytes() } }
+                ?: throw IllegalStateException("Could not open the selected file.")
+            if (bytes.isEmpty() || bytes.size > 15 * 1024 * 1024) throw IllegalArgumentException("Choose a non-empty file smaller than 15 MB.")
+            val body = bytes.toRequestBody(mimeType.toMediaType())
+            val part = MultipartBody.Part.createFormData("file", fileName, body)
+            workflowApi.uploadDocument("Bearer $token", requestId.toRequestBody("text/plain".toMediaType()), part).requireWorkflowSuccess()
+        }
+    }
+
+    fun markHospitalDocumentsComplete(requestId: String) = workflowAction { token ->
+        workflowApi.completeDocuments("Bearer $token", requestId).requireWorkflowSuccess()
+    }
 
     val services: List<ServiceItem> = DataSeed.yawarServices
 
@@ -396,10 +729,11 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     fun startBooking(doctor: DoctorEntity? = null, specialty: String = "Cardiology") {
         _bookingDraft.value = BookingDraft(
             specialty = doctor?.specialty ?: specialty,
-            doctorId = doctor?.id ?: "",
-            doctorName = doctor?.name ?: "First Suitable Specialist",
-            facilityName = doctor?.hospitalAffiliation ?: "FMIC Tertiary Hospital",
-            isFirstSuitableDoctor = (doctor == null)
+            doctorId = "",
+            doctorName = "",
+            facilityId = "",
+            facilityName = "",
+            isFirstSuitableDoctor = true
         )
         _bookingStep.value = 1
         _lastSubmittedReference.value = null
@@ -424,68 +758,60 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     fun submitBooking() {
         viewModelScope.launch {
             val draft = _bookingDraft.value
-            val referenceId = "YHCS-2026-" + Random.nextInt(1000, 9999)
-            val newAppointment = AppointmentEntity(
-                id = referenceId,
-                patientName = "Ahmad Shah",
-                patientPhone = "+93 70 123 4567",
-                isDependent = false,
-                dependentName = "",
-                dependentRelation = "",
-                specialty = draft.specialty,
-                reasonForCare = if (draft.reasonForCare.isNotBlank()) draft.reasonForCare else "Clinical consultation and assessment",
-                symptomsSummary = draft.symptomsSummary,
-                urgency = draft.urgency,
-                visitType = draft.visitType,
-                province = draft.province,
-                facilityId = draft.facilityId,
-                facilityName = if (draft.facilityName.isNotBlank()) draft.facilityName else "French Medical Institute for Mothers & Children (FMIC)",
-                doctorId = draft.doctorId,
-                doctorName = if (draft.doctorName.isNotBlank()) draft.doctorName else "First Available Specialist",
-                appointmentDate = draft.appointmentDate,
-                timeSlot = draft.timeSlot,
-                corporateMemberId = draft.corporateMemberId,
-                attachedDocuments = if (draft.attachedDocs.isNotEmpty()) draft.attachedDocs else listOf("Patient_Clinical_Brief.pdf"),
-                contactPreference = draft.contactPreference,
-                status = AppointmentStatus.SUBMITTED,
-                coordinatorNotes = "Auto-dispatched to callcenter@yawarconsulting.com. Pending coordinator review.",
-                doctorPreparationNotes = "Bring all existing medication packages and prior laboratory reports.",
-                emailAlertSentTo = "callcenter@yawarconsulting.com",
-                createdAtTimestamp = System.currentTimeMillis()
-            )
-
-            repository.submitAppointment(newAppointment)
-            _lastSubmittedReference.value = referenceId
-            _bookingStep.value = 9 // Step 9: Confirmation
-
-            // Also log an automated coordinator intake message
-            repository.sendMessage(
-                content = "Salam. Your booking request ($referenceId) for ${newAppointment.specialty} at ${newAppointment.facilityName} is under review. Operational alert sent to callcenter@yawarconsulting.com.",
-                senderRole = "COORDINATOR",
-                senderName = "Farhad (YHCS Coordinator)"
-            )
+            if (draft.reasonForCare.isBlank()) {
+                showSnackbar("Describe your health concern before sending the request.")
+                return@launch
+            }
+            if (!draft.consentGiven) {
+                showSnackbar("Review the privacy notice and provide your consent before sending this request.")
+                return@launch
+            }
+            val token = authTokenStore.read()
+            if (token == null) {
+                showSnackbar("Sign in again to send a care request.")
+                return@launch
+            }
+            try {
+                val result = workflowApi.createRequest(
+                    "Bearer $token",
+                    NewCareRequest(
+                        specialty = draft.specialty,
+                        reasonForCare = draft.reasonForCare.trim(),
+                        symptomsSummary = draft.symptomsSummary.trim(),
+                        urgency = draft.urgency,
+                        visitType = draft.visitType.name,
+                        province = draft.province,
+                        appointmentDate = draft.appointmentDate,
+                        timeSlot = draft.timeSlot,
+                        consentGiven = draft.consentGiven
+                    )
+                ).requireWorkflowSuccess()
+                refreshWorkflowOnce(token)
+                _lastSubmittedReference.value = result.data?.request?.id ?: appointments.value.firstOrNull()?.id
+                _bookingStep.value = 9
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "Could not send your request. Try again when you have a connection.")
+            }
         }
     }
 
     // Doctor Actions
     fun doctorConfirmAppointment(id: String) {
-        viewModelScope.launch {
-            repository.updateAppointmentStatus(id, AppointmentStatus.CONFIRMED, "Confirmed by treating physician.")
-            showSnackbar("Appointment $id confirmed!")
+        workflowAction { token ->
+            workflowApi.updateDoctorRequest("Bearer $token", id, DoctorRequestUpdate("CONFIRMED", "Confirmed by the treating doctor.")).requireWorkflowSuccess()
         }
     }
 
     fun doctorDeclineAppointment(id: String, reason: String) {
-        viewModelScope.launch {
-            repository.updateAppointmentStatus(id, AppointmentStatus.CANCELLED, "Provider unavailable: $reason")
-            showSnackbar("Appointment declined with reason: $reason")
+        workflowAction { token ->
+            workflowApi.updateDoctorRequest("Bearer $token", id, DoctorRequestUpdate("CANCELLED", "Doctor unavailable: $reason")).requireWorkflowSuccess()
         }
     }
 
     fun doctorCompleteVisit(id: String, summary: String) {
-        viewModelScope.launch {
-            repository.updateAppointmentStatus(id, AppointmentStatus.COMPLETED, "Visit completed. Summary: $summary")
-            showSnackbar("Visit marked as completed with clinical notes.")
+        workflowAction { token ->
+            workflowApi.updateDoctorRequest("Bearer $token", id, DoctorRequestUpdate("COMPLETED", summary)).requireWorkflowSuccess()
         }
     }
 
@@ -550,21 +876,22 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     fun submitNewClaim(claimType: String, provider: String, amount: Double, notes: String) {
         viewModelScope.launch {
             val claimId = "CLM-2026-" + Random.nextInt(1000, 9999)
+            val profile = userProfile.value
             val claim = ClaimEntity(
                 id = claimId,
-                patientName = "Ahmad Shah",
+                patientName = profile?.fullName.orEmpty(),
                 claimType = claimType,
                 providerOrHospital = provider,
-                dateOfService = "Today",
+                dateOfService = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
                 invoiceAmountAf = amount,
                 approvedAmountAf = 0.0,
                 status = ClaimStatus.SUBMITTED,
                 documentTypes = listOf("Itemized Invoice", "Doctor Prescription"),
                 remarks = notes.ifBlank { "Claim submitted via mobile app." },
-                submissionDate = "22 Sep 2026"
+                submissionDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
             )
             repository.submitClaim(claim)
-            showSnackbar("Claim $claimId registered! Operational alert sent to callcenter@yawarconsulting.com")
+            showSnackbar("Claim $claimId saved on this device.")
         }
     }
 
@@ -578,63 +905,19 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         if (content.isBlank() && messageType == "TEXT") return
         viewModelScope.launch {
-            val role = _currentRole.value
-            val senderName = when (role) {
-                UserRole.PATIENT -> "Ahmad Shah (Patient)"
-                UserRole.DOCTOR -> "Dr. Abdul Wasi Momand"
-                UserRole.ADMIN -> "Farhad (Care Coordinator)"
+            val token = authTokenStore.read()
+            val requestId = conversationId.removePrefix("case_")
+            if (token == null || requestId == conversationId) {
+                showSnackbar("Open a care request to message its care team.")
+                return@launch
             }
-            repository.sendMessage(
-                content = content,
-                senderRole = role.name,
-                senderName = senderName,
-                conversationId = conversationId,
-                messageType = messageType,
-                attachmentName = attachmentName,
-                attachmentSize = attachmentSize,
-                voiceDurationSec = voiceDurationSec,
-                deliveryStatus = "READ"
-            )
-
-            // 1-to-1 direct recipient response (Strictly scoped to the conversation recipient)
-            if (role == UserRole.PATIENT) {
-                kotlinx.coroutines.delay(1200)
-                when (conversationId) {
-                    "conv_coord" -> {
-                        repository.sendMessage(
-                            content = "Tashakor for reaching out. A Yawar health coordinator has received your message and will respond shortly. For urgent emergency support, please call +93 707 438 303.",
-                            senderRole = "COORDINATOR",
-                            senderName = "Farhad (Care Coordinator)",
-                            conversationId = conversationId
-                        )
-                    }
-                    "conv_momand" -> {
-                        repository.sendMessage(
-                            content = "Salam Ahmad Shah. I have received your message regarding your ultrasound appointment. I will review your previous reports before Saturday's examination.",
-                            senderRole = "DOCTOR",
-                            senderName = "Dr. Abdul Wasi Momand",
-                            conversationId = conversationId
-                        )
-                    }
-                    "conv_safir" -> {
-                        repository.sendMessage(
-                            content = "Salam Ahmad Shah. Message received. Please be ready with the child's immunization card and records at Nang Curative Hospital.",
-                            senderRole = "DOCTOR",
-                            senderName = "Dr. Safir Khan",
-                            conversationId = conversationId
-                        )
-                    }
-                    else -> {
-                        val doc = doctors.value.firstOrNull { it.id == conversationId.removePrefix("conv_") }
-                        val doctorName = doc?.name ?: "Attending Specialist"
-                        repository.sendMessage(
-                            content = "Salam Ahmad Shah. Your message has been received by $doctorName.",
-                            senderRole = "DOCTOR",
-                            senderName = doctorName,
-                            conversationId = conversationId
-                        )
-                    }
-                }
+            try {
+                workflowApi.sendMessage("Bearer $token", SendCaseMessage(requestId, content.trim()))
+                    .requireWorkflowSuccess()
+                refreshWorkflowOnce(token)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "The message could not be sent.")
             }
         }
     }

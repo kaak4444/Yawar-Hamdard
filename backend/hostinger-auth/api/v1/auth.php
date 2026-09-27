@@ -80,18 +80,23 @@ function database(array $config): PDO
 
 function findUser(PDO $db, string $email): ?array
 {
-    $query = $db->prepare('SELECT id, email, password_hash, role, email_verified_at FROM app_users WHERE email = ? LIMIT 1');
+    $query = $db->prepare('SELECT id, email, password_hash, role, email_verified_at, is_active FROM app_users WHERE email = ? LIMIT 1');
     $query->execute([$email]);
     $user = $query->fetch();
     return $user === false ? null : $user;
 }
 
-function userPayload(array $user): array
+function userPayload(PDO $db, array $user): array
 {
+    $profileQuery = $db->prepare('SELECT full_name, phone FROM app_profiles WHERE user_id = ? LIMIT 1');
+    $profileQuery->execute([(int)$user['id']]);
+    $profile = $profileQuery->fetch() ?: [];
     return [
         'id' => (int)$user['id'],
         'email' => (string)$user['email'],
-        'role' => in_array($user['role'], ['patient', 'doctor', 'admin'], true) ? $user['role'] : 'patient',
+        'role' => in_array($user['role'], ['patient', 'doctor', 'call_center', 'hospital', 'admin'], true) ? $user['role'] : 'patient',
+        'full_name' => (string)($profile['full_name'] ?? ''),
+        'phone' => (string)($profile['phone'] ?? ''),
     ];
 }
 
@@ -321,14 +326,14 @@ function authenticatedUser(PDO $db): array
         throw new ApiFault(401, 'Please sign in again.');
     }
     $query = $db->prepare(
-        'SELECT u.id, u.email, u.role, u.email_verified_at, s.id AS session_id
+        'SELECT u.id, u.email, u.role, u.email_verified_at, u.is_active, s.id AS session_id
          FROM app_sessions s JOIN app_users u ON u.id = s.user_id
          WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > UTC_TIMESTAMP()
          LIMIT 1'
     );
     $query->execute([hash('sha256', $token)]);
     $user = $query->fetch();
-    if ($user === false || $user['email_verified_at'] === null) {
+    if ($user === false || $user['email_verified_at'] === null || (int)$user['is_active'] !== 1) {
         throw new ApiFault(401, 'Please sign in again.');
     }
     $touch = $db->prepare('UPDATE app_sessions SET last_used_at = UTC_TIMESTAMP() WHERE id = ?');
@@ -367,7 +372,7 @@ try {
 
     if ($action === 'me' && $method === 'GET') {
         $user = authenticatedUser($db);
-        success(['user' => userPayload($user)]);
+        success(['user' => userPayload($db, $user)]);
     }
     if ($action === 'logout' && $method === 'POST') {
         $token = bearerToken();
@@ -387,11 +392,57 @@ try {
     if ($action === 'signup') {
         $password = requiredString($body, 'password', 200);
         if (strlen($password) < 12) throw new ApiFault(422, 'Use a password with at least 12 characters.');
+        $role = requiredString($body, 'role', 16);
+        if (!in_array($role, ['patient', 'doctor'], true)) {
+            throw new ApiFault(422, 'Choose patient or doctor registration. Staff accounts are invitation-only.');
+        }
+        $fullName = trim(requiredString($body, 'full_name', 120));
+        $phone = trim(requiredString($body, 'phone', 32));
+        if (!preg_match('/^.{2,}$/u', $fullName) || !preg_match('/^[+0-9() .-]{7,32}$/', $phone)) {
+            throw new ApiFault(422, 'Enter a valid full name and phone number.');
+        }
+        $specialty = trim((string)($body['specialty'] ?? ''));
+        $licenseNumber = trim((string)($body['license_number'] ?? ''));
+        if ($role === 'doctor' && ($specialty === '' || $licenseNumber === '')) {
+            throw new ApiFault(422, 'Doctors must provide a specialty and license number.');
+        }
+        $staffEmails = [
+            'm.ibrahim@yawarconsulting.com',
+            'dr_eimalmalik@yawarconsulting.com',
+            'yh24@yawarconsulting.com',
+            'ibrahimkakar182@gmail.com',
+            'info@yawarconsulting.com',
+        ];
+        if (in_array($email, $staffEmails, true)) {
+            throw new ApiFault(403, 'This is a staff account. Use the account created by the manager.');
+        }
         $user = findUser($db, $email);
+        if ($user !== null && (int)$user['is_active'] !== 1) {
+            throw new ApiFault(403, 'This account is unavailable. Contact the Yawar manager.');
+        }
         if ($user === null) {
-            $insert = $db->prepare('INSERT INTO app_users (email, password_hash, role) VALUES (?, ?, \'patient\')');
-            $insert->execute([$email, password_hash($password, PASSWORD_DEFAULT)]);
-            $user = findUser($db, $email);
+            $db->beginTransaction();
+            try {
+                $insert = $db->prepare('INSERT INTO app_users (email, password_hash, role) VALUES (?, ?, ?)');
+                $insert->execute([$email, password_hash($password, PASSWORD_DEFAULT), $role]);
+                $user = findUser($db, $email);
+                if ($user === null) throw new RuntimeException('New account could not be loaded.');
+                $profileInsert = $db->prepare('INSERT INTO app_profiles (user_id, full_name, phone) VALUES (?, ?, ?)');
+                $profileInsert->execute([(int)$user['id'], $fullName, $phone]);
+                if ($role === 'doctor') {
+                    $doctorInsert = $db->prepare('INSERT INTO doctor_profiles (user_id, specialty, license_number) VALUES (?, ?, ?)');
+                    $doctorInsert->execute([(int)$user['id'], $specialty, $licenseNumber]);
+                }
+                $db->commit();
+            } catch (Throwable $error) {
+                if ($db->inTransaction()) $db->rollBack();
+                throw $error;
+            }
+        } elseif ($user['email_verified_at'] === null && !password_verify($password, (string)$user['password_hash'])) {
+            // Keep the response indistinguishable for unknown and already-used addresses.
+            success(['message' => 'If this address can be registered, a verification code has been sent.']);
+        } elseif ($user['email_verified_at'] === null && $user['role'] !== $role) {
+            throw new ApiFault(409, 'This email already has a pending registration under another account type.');
         }
         if ($user !== null && $user['email_verified_at'] === null) {
             sendOtp($db, $config, $user, 'signup');
@@ -413,7 +464,7 @@ try {
         $user['email_verified_at'] = gmdate('Y-m-d H:i:s');
         $token = createSession($db, (int)$user['id']);
         $db->commit();
-        success(['token' => $token, 'user' => userPayload($user)]);
+        success(['token' => $token, 'user' => userPayload($db, $user)]);
     }
 
     if ($action === 'resend-signup') {
@@ -427,19 +478,19 @@ try {
     if ($action === 'login') {
         $password = requiredString($body, 'password', 200);
         $user = findUser($db, $email);
-        if ($user === null || !password_verify($password, (string)$user['password_hash'])) {
+        if ($user === null || (int)$user['is_active'] !== 1 || !password_verify($password, (string)$user['password_hash'])) {
             throw new ApiFault(401, 'Email or password is incorrect.');
         }
         if ($user['email_verified_at'] === null) {
             throw new ApiFault(403, 'Verify your email address before signing in.');
         }
         $token = createSession($db, (int)$user['id']);
-        success(['token' => $token, 'user' => userPayload($user)]);
+        success(['token' => $token, 'user' => userPayload($db, $user)]);
     }
 
     if ($action === 'password-reset-start') {
         $user = findUser($db, $email);
-        if ($user !== null && $user['email_verified_at'] !== null) {
+        if ($user !== null && (int)$user['is_active'] === 1 && $user['email_verified_at'] !== null) {
             try {
                 sendOtp($db, $config, $user, 'reset');
             } catch (ApiFault $error) {
@@ -456,7 +507,7 @@ try {
         if (!preg_match('/^\d{6}$/', $code)) throw new ApiFault(422, 'Enter the six-digit code from your email.');
         if (strlen($password) < 12) throw new ApiFault(422, 'Use a password with at least 12 characters.');
         $user = findUser($db, $email);
-        if ($user === null || $user['email_verified_at'] === null) {
+        if ($user === null || (int)$user['is_active'] !== 1 || $user['email_verified_at'] === null) {
             throw new ApiFault(422, 'The code is invalid or expired. Request a new one.');
         }
         $db->beginTransaction();

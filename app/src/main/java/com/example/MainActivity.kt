@@ -62,7 +62,15 @@ import com.example.ui.patient.FindCareScreen
 import com.example.ui.patient.MessagesScreen
 import com.example.ui.patient.PatientHomeScreen
 import com.example.ui.patient.ProfileScreen
+import com.example.ui.workflow.CareMessagesScreen
+import com.example.ui.workflow.CallCenterDashboardScreen
+import com.example.ui.workflow.HospitalDashboardScreen
+import com.example.ui.workflow.HospitalPayoutsScreen
+import com.example.ui.workflow.ManagerDashboardScreen
+import com.example.ui.workflow.PatientCareRequestsScreen
 import com.example.ui.theme.YawarTheme
+import com.example.ui.theme.WhatsAppGreen
+import com.example.ui.theme.WhatsAppPaleGreen
 import com.example.ui.viewmodel.YawarViewModel
 
 class MainActivity : ComponentActivity() {
@@ -152,8 +160,9 @@ class MainActivity : ComponentActivity() {
                                         )
                                     }
                                     UserRole.DOCTOR,
+                                    UserRole.CALL_CENTER,
+                                    UserRole.HOSPITAL,
                                     UserRole.ADMIN -> {
-                                        // For Doctor and Admin modes, quick switch tabs (Dashboard, Messages, Profile)
                                         StaffBottomNavigation(
                                             selectedTab = currentPatientTab,
                                             onTabSelected = { currentPatientTab = it },
@@ -202,7 +211,7 @@ class MainActivity : ComponentActivity() {
                                                 viewModel = viewModel,
                                                 initialTab = 0,
                                                 onOpenBooking = { doc ->
-                                                    viewModel.startBooking(doc)
+                                                    if (doc != null) viewModel.startBooking(specialty = doc.specialty)
                                                     isBookingActive = true
                                                 }
                                             )
@@ -210,18 +219,12 @@ class MainActivity : ComponentActivity() {
                                                 viewModel = viewModel,
                                                 initialTab = 1,
                                                 onOpenBooking = { doc ->
-                                                    viewModel.startBooking(doc)
+                                                    if (doc != null) viewModel.startBooking(specialty = doc.specialty)
                                                     isBookingActive = true
                                                 }
                                             )
-                                            3 -> AppointmentsScreen(
-                                                viewModel = viewModel,
-                                                onBookNew = {
-                                                    viewModel.startBooking()
-                                                    isBookingActive = true
-                                                }
-                                            )
-                                            4 -> MessagesScreen(viewModel = viewModel)
+                                            3 -> PatientCareRequestsScreen(viewModel = viewModel, onOpenMessages = { currentPatientTab = 4 })
+                                            4 -> CareMessagesScreen(viewModel = viewModel)
                                             5 -> ClaimsScreen(viewModel = viewModel)
                                             6 -> CasesScreen(viewModel = viewModel)
                                             else -> ProfileScreen(viewModel = viewModel)
@@ -231,16 +234,33 @@ class MainActivity : ComponentActivity() {
                                     UserRole.DOCTOR -> {
                                         when (currentPatientTab) {
                                             0 -> DoctorDashboardScreen(viewModel = viewModel)
-                                            1 -> MessagesScreen(viewModel = viewModel)
+                                            1 -> CareMessagesScreen(viewModel = viewModel)
+                                            else -> ProfileScreen(viewModel = viewModel)
+                                        }
+                                    }
+
+                                    UserRole.CALL_CENTER -> {
+                                        when (currentPatientTab) {
+                                            0 -> CallCenterDashboardScreen(viewModel = viewModel, onOpenMessages = { currentPatientTab = 2 })
+                                            1 -> HospitalPayoutsScreen(viewModel = viewModel, canEdit = true)
+                                            2 -> CareMessagesScreen(viewModel = viewModel)
+                                            else -> ProfileScreen(viewModel = viewModel)
+                                        }
+                                    }
+
+                                    UserRole.HOSPITAL -> {
+                                        when (currentPatientTab) {
+                                            0 -> HospitalDashboardScreen(viewModel = viewModel, onOpenMessages = { currentPatientTab = 1 })
+                                            1 -> CareMessagesScreen(viewModel = viewModel)
                                             else -> ProfileScreen(viewModel = viewModel)
                                         }
                                     }
 
                                     UserRole.ADMIN -> {
                                         when (currentPatientTab) {
-                                            0 -> AdminDashboardScreen(viewModel = viewModel)
-                                            1 -> CasesScreen(viewModel = viewModel)
-                                            2 -> MessagesScreen(viewModel = viewModel)
+                                            0 -> ManagerDashboardScreen(viewModel = viewModel, onOpenMessages = { currentPatientTab = 2 })
+                                            1 -> HospitalPayoutsScreen(viewModel = viewModel, canEdit = true)
+                                            2 -> CareMessagesScreen(viewModel = viewModel)
                                             else -> ProfileScreen(viewModel = viewModel)
                                         }
                                     }
@@ -255,7 +275,7 @@ class MainActivity : ComponentActivity() {
                                     onDismiss = { viewModel.closeDoctorDetail() },
                                     onBook = {
                                         viewModel.closeDoctorDetail()
-                                        viewModel.startBooking(doc)
+                                        viewModel.startBooking(specialty = doc.specialty)
                                         isBookingActive = true
                                     }
                                 )
@@ -365,8 +385,8 @@ fun PatientBottomNavigation(
         items = items,
         selectedTab = selectedTab,
         onTabSelected = onTabSelected,
-        accent = scheme.primary,
-        accentContainer = scheme.primaryContainer
+        accent = if (selectedTab == 4) WhatsAppGreen else scheme.primary,
+        accentContainer = if (selectedTab == 4) WhatsAppPaleGreen else scheme.primaryContainer
     )
 }
 
@@ -378,32 +398,40 @@ fun StaffBottomNavigation(
     language: AppLanguage
 ) {
     val scheme = MaterialTheme.colorScheme
-    val isAdmin = role == UserRole.ADMIN
-    val items = buildList {
-        add(
-            YawarNavItem(
-                icon = Icons.Default.Home,
-                label = if (isAdmin) AppStrings.getDashboard(language) else AppStrings.getSchedule(language),
-                contentDescription = "Dashboard"
-            )
+    val items = when (role) {
+        UserRole.ADMIN -> listOf(
+            YawarNavItem(Icons.Default.Home, "Manager", "Manager dashboard"),
+            YawarNavItem(Icons.Default.ReceiptLong, "Hospital payouts", "Hospital payouts"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
         )
-        if (isAdmin) {
-            add(
-                YawarNavItem(
-                    icon = Icons.Default.MedicalServices,
-                    label = AppStrings.getCoordinationCases(language),
-                    contentDescription = "Cases"
-                )
-            )
-        }
-        add(YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"))
-        add(YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account"))
+        UserRole.CALL_CENTER -> listOf(
+            YawarNavItem(Icons.Default.Home, "Case queue", "Call center queue"),
+            YawarNavItem(Icons.Default.ReceiptLong, "Hospital payouts", "Hospital payouts"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
+        )
+        UserRole.HOSPITAL -> listOf(
+            YawarNavItem(Icons.Default.LocalHospital, "Referrals", "Hospital referrals"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
+        )
+        else -> listOf(
+            YawarNavItem(Icons.Default.Home, AppStrings.getSchedule(language), "Dashboard"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
+        )
+    }
+    val messagesTab = when (role) {
+        UserRole.ADMIN, UserRole.CALL_CENTER -> 2
+        UserRole.HOSPITAL, UserRole.DOCTOR -> 1
+        else -> -1
     }
     YawarNavBar(
         items = items,
         selectedTab = selectedTab,
         onTabSelected = onTabSelected,
-        accent = scheme.secondary,
-        accentContainer = scheme.secondaryContainer
+        accent = if (selectedTab == messagesTab) WhatsAppGreen else scheme.secondary,
+        accentContainer = if (selectedTab == messagesTab) WhatsAppPaleGreen else scheme.secondaryContainer
     )
 }

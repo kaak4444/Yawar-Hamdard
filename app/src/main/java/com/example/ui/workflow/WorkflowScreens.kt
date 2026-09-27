@@ -1,0 +1,820 @@
+package com.example.ui.workflow
+
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.auth.HospitalInput
+import com.example.data.auth.PaymentInput
+import com.example.data.local.AppointmentEntity
+import com.example.data.local.FacilityEntity
+import com.example.data.local.MessageEntity
+import com.example.data.model.AppointmentStatus
+import com.example.ui.common.HospitalLogoBadge
+import com.example.ui.common.chatDoodleWallpaper
+import com.example.ui.theme.ChatBubbleIn
+import com.example.ui.theme.ChatBubbleOut
+import com.example.ui.theme.ChatCanvas
+import com.example.ui.theme.ChatMeta
+import com.example.ui.theme.WhatsAppGreen
+import com.example.ui.viewmodel.YawarViewModel
+import java.net.URLEncoder
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@Composable
+fun PatientCareRequestsScreen(viewModel: YawarViewModel, onOpenMessages: () -> Unit = {}) {
+    val requests by viewModel.appointments.collectAsState()
+    val hospitals by viewModel.facilities.collectAsState()
+    val refreshing by viewModel.workflowRefreshing.collectAsState()
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        ScreenHeading("My care requests", "Your care team reviews each request before referring it to a hospital.", refreshing, viewModel::refreshWorkflow)
+        if (requests.isEmpty()) {
+            EmptyWorkflowState("No care requests yet", "Start a care request from Home. Your request will appear here after it reaches the Yawar call center.")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                items(requests, key = { it.id }) { request ->
+                    PatientRequestCard(request, hospitals, onRoute = { viewModel.routeCareRequest(request.id, it) }, onMessage = {
+                        viewModel.selectCareRequest(request.id)
+                        onOpenMessages()
+                    })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CallCenterDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> Unit = {}) {
+    val requests by viewModel.appointments.collectAsState()
+    val hospitals by viewModel.facilities.collectAsState()
+    val doctors by viewModel.managedDoctors.collectAsState()
+    val refreshing by viewModel.workflowRefreshing.collectAsState()
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        ScreenHeading("Call-center case queue", "Review patient requests, speak with patients, and route approved referrals.", refreshing, viewModel::refreshWorkflow)
+        QueueMetrics(requests)
+        if (requests.isEmpty()) {
+            EmptyWorkflowState("The queue is clear", "New patient care requests will appear here after the shared care service is connected.")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                items(requests, key = { it.id }) { request ->
+                    StaffRequestCard(
+                        request = request,
+                        hospitals = hospitals,
+                        onReview = { viewModel.reviewCareRequest(request.id) },
+                        onRoute = { hospitalId -> viewModel.routeCareRequest(request.id, hospitalId) },
+                        doctors = doctors,
+                        onAssignDoctor = { doctorId -> viewModel.assignDoctorToRequest(request.id, doctorId) },
+                        onMessage = {
+                            viewModel.selectCareRequest(request.id)
+                            onOpenMessages()
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HospitalDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> Unit = {}) {
+    val requests by viewModel.appointments.collectAsState()
+    val hospitals by viewModel.facilities.collectAsState()
+    val refreshing by viewModel.workflowRefreshing.collectAsState()
+    val context = LocalContext.current
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        ScreenHeading("Hospital referrals", "Review referrals sent to your hospital, message patients, and upload their records.", refreshing, viewModel::refreshWorkflow)
+        val pendingDocs = requests.count { it.status == AppointmentStatus.AWAITING_PROVIDER && it.attachedDocuments.isEmpty() }
+        QueueMetrics(requests, pendingDocs)
+        if (requests.isEmpty()) {
+            EmptyWorkflowState("No referrals yet", "Cases are shown only after the call center or patient sends a referral to your hospital.")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                items(requests, key = { it.id }) { request ->
+                    HospitalRequestCard(
+                        request = request,
+                        hospitals = hospitals,
+                        onMessage = {
+                            viewModel.selectCareRequest(request.id)
+                            onOpenMessages()
+                        },
+                        onUpload = { uri -> viewModel.uploadHospitalDocument(request.id, context.contentResolver, uri) },
+                        onComplete = { viewModel.markHospitalDocumentsComplete(request.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PatientRequestCard(
+    request: AppointmentEntity,
+    hospitals: List<FacilityEntity>,
+    onRoute: (String) -> Unit,
+    onMessage: () -> Unit
+) {
+    val context = LocalContext.current
+    var menuOpen by remember(request.id) { mutableStateOf(false) }
+    var selectedHospital by remember(request.id) { mutableStateOf(request.facilityId) }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            RequestSummary(request)
+            Text("Status: ${request.status.labelEn}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            if (request.status == AppointmentStatus.UNDER_REVIEW && request.facilityId.isBlank()) {
+                Text("Your care team has reviewed this request. Choose a hospital profile to approve the referral.", fontSize = 13.sp)
+                Box {
+                    OutlinedButton(onClick = { menuOpen = true }, enabled = hospitals.isNotEmpty()) {
+                        Text(hospitals.firstOrNull { it.id == selectedHospital }?.name ?: "Choose a hospital")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        hospitals.forEach { hospital ->
+                            DropdownMenuItem(
+                                text = { Text(hospital.name) },
+                                onClick = { selectedHospital = hospital.id; menuOpen = false }
+                            )
+                        }
+                    }
+                }
+                Button(onClick = { onRoute(selectedHospital) }, enabled = selectedHospital.isNotBlank()) { Text("Approve and send referral") }
+            } else if (request.facilityId.isNotBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val hospital = hospitals.firstOrNull { it.id == request.facilityId }
+                    HospitalLogoBadge(request.facilityName, size = 40.dp, logoUrl = hospital?.logoFile.orEmpty(), hospitalId = request.facilityId)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(request.facilityName, fontWeight = FontWeight.Bold)
+                        Text("Referral sent to hospital", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                val hospital = hospitals.firstOrNull { it.id == request.facilityId }
+                if (hospital != null && hospital.contactPhone.isNotBlank()) {
+                    ContactButtons(
+                        phone = hospital.contactPhone.substringBefore('/').trim(),
+                        whatsappPhone = hospital.whatsappPhone.ifBlank { hospital.contactPhone.substringBefore('/').trim() },
+                        message = "Hello, I am following up on referral ${request.id}."
+                    )
+                }
+            } else {
+                Text("The call center will review your request and contact you.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (request.attachedDocuments.isNotEmpty()) Text("Hospital records: ${request.attachedDocuments.joinToString()}", fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onMessage) { Icon(Icons.Default.Chat, null); Spacer(Modifier.width(5.dp)); Text("Message care team") }
+                if (request.patientPhone.isNotBlank()) OutlinedButton(onClick = { dial(context, request.patientPhone) }) { Icon(Icons.Default.Call, null); Text("Call") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StaffRequestCard(
+    request: AppointmentEntity,
+    hospitals: List<FacilityEntity>,
+    onReview: () -> Unit,
+    onRoute: (String) -> Unit,
+    doctors: List<com.example.data.auth.WorkflowDoctor> = emptyList(),
+    onAssignDoctor: (String) -> Unit = {},
+    onMessage: () -> Unit
+) {
+    var menuOpen by remember(request.id) { mutableStateOf(false) }
+    var doctorMenuOpen by remember(request.id) { mutableStateOf(false) }
+    var selectedHospital by remember(request.id) { mutableStateOf(request.facilityId) }
+    var selectedDoctor by remember(request.id) { mutableStateOf(request.doctorId) }
+    val context = LocalContext.current
+    val eligibleDoctors = doctors.filter { it.isVerified && it.hospitalAffiliation == request.facilityName }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            RequestSummary(request)
+            Text("Patient phone: ${request.patientPhone.ifBlank { "Not provided" }}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Status: ${request.status.labelEn}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            if (request.coordinatorNotes.isNotBlank()) Text(request.coordinatorNotes, fontSize = 12.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (request.patientPhone.isNotBlank()) {
+                    OutlinedButton(onClick = { dial(context, request.patientPhone) }) { Icon(Icons.Default.Call, null); Text("Call patient") }
+                    OutlinedButton(onClick = { openWhatsApp(context, request.patientPhone, "Hello ${request.patientName}, Yawar call center is following up on request ${request.id}.") }) {
+                        Icon(Icons.Default.Chat, null); Text("WhatsApp")
+                    }
+                }
+                OutlinedButton(onClick = onMessage) { Icon(Icons.Default.Chat, null); Text("In-app message") }
+            }
+            if (request.status == AppointmentStatus.SUBMITTED) Button(onClick = onReview) { Text("Mark reviewed") }
+            if (request.status == AppointmentStatus.UNDER_REVIEW || request.status == AppointmentStatus.AWAITING_PROVIDER) {
+                Box {
+                    OutlinedButton(onClick = { menuOpen = true }, enabled = hospitals.isNotEmpty()) {
+                        Text(hospitals.firstOrNull { it.id == selectedHospital }?.name ?: "Choose receiving hospital")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        hospitals.forEach { hospital ->
+                            DropdownMenuItem(text = { Text(hospital.name) }, onClick = { selectedHospital = hospital.id; menuOpen = false })
+                        }
+                    }
+                }
+                Button(onClick = { onRoute(selectedHospital) }, enabled = selectedHospital.isNotBlank()) {
+                    Text(if (request.facilityId.isBlank()) "Send referral" else "Update hospital referral")
+                }
+            }
+            if (request.facilityName.isNotBlank()) Text("Receiving hospital: ${request.facilityName}", fontSize = 12.sp)
+            if (request.facilityId.isNotBlank() && eligibleDoctors.isNotEmpty()) {
+                Box {
+                    OutlinedButton(onClick = { doctorMenuOpen = true }) {
+                        Text(eligibleDoctors.firstOrNull { it.id == selectedDoctor }?.name ?: "Assign verified doctor")
+                    }
+                    DropdownMenu(expanded = doctorMenuOpen, onDismissRequest = { doctorMenuOpen = false }) {
+                        eligibleDoctors.forEach { doctor ->
+                            DropdownMenuItem(text = { Text(doctor.name) }, onClick = { selectedDoctor = doctor.id; doctorMenuOpen = false })
+                        }
+                    }
+                }
+                Button(onClick = { onAssignDoctor(selectedDoctor) }, enabled = selectedDoctor.isNotBlank()) { Text("Assign doctor") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HospitalRequestCard(
+    request: AppointmentEntity,
+    hospitals: List<FacilityEntity>,
+    onMessage: () -> Unit,
+    onUpload: (Uri) -> Unit,
+    onComplete: () -> Unit
+) {
+    val context = LocalContext.current
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(onUpload) }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            hospitals.firstOrNull { it.id == request.facilityId }?.let { hospital ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HospitalLogoBadge(hospital.name, size = 40.dp, logoUrl = hospital.logoFile, hospitalId = hospital.id)
+                    Text(hospital.name, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            RequestSummary(request)
+            Text("Patient phone: ${request.patientPhone.ifBlank { "Not provided" }}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Status: ${request.status.labelEn}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            if (request.coordinatorNotes.isNotBlank()) Text(request.coordinatorNotes, fontSize = 12.sp)
+            if (request.attachedDocuments.isNotEmpty()) {
+                Text("Uploaded patient records", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                request.attachedDocuments.forEach { Text("• $it", fontSize = 12.sp) }
+            } else if (request.status == AppointmentStatus.AWAITING_PROVIDER) {
+                Text("Patient records are pending. Email reminders need a hospital contact email and configured Hostinger mail.", fontSize = 12.sp)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (request.patientPhone.isNotBlank()) {
+                    OutlinedButton(onClick = { dial(context, request.patientPhone) }) { Icon(Icons.Default.Call, null); Text("Call patient") }
+                    OutlinedButton(onClick = { openWhatsApp(context, request.patientPhone, "Hello ${request.patientName}, this is ${request.facilityName} about referral ${request.id}.") }) {
+                        Icon(Icons.Default.Chat, null); Text("WhatsApp")
+                    }
+                }
+                OutlinedButton(onClick = onMessage) { Icon(Icons.Default.Chat, null); Text("Message") }
+            }
+            if (request.status == AppointmentStatus.AWAITING_PROVIDER) {
+                OutlinedButton(onClick = { filePicker.launch(arrayOf("application/pdf", "image/jpeg", "image/png")) }) {
+                    Icon(Icons.Default.UploadFile, null); Spacer(Modifier.width(6.dp)); Text("Upload patient record")
+                }
+                if (request.attachedDocuments.isNotEmpty()) Button(onClick = onComplete) { Text("Mark records complete") }
+            }
+        }
+    }
+}
+
+@Composable
+fun CareMessagesScreen(viewModel: YawarViewModel) {
+    val requests by viewModel.appointments.collectAsState()
+    val hospitals by viewModel.facilities.collectAsState()
+    val messages by viewModel.messages.collectAsState()
+    val selectedId by viewModel.selectedCareRequestId.collectAsState()
+    val currentRole by viewModel.currentRole.collectAsState()
+    var text by remember { mutableStateOf("") }
+    val messageListState = rememberLazyListState()
+    LaunchedEffect(requests, selectedId) {
+        if (requests.none { it.id == selectedId }) viewModel.selectCareRequest(requests.firstOrNull()?.id.orEmpty())
+    }
+    val request = requests.firstOrNull { it.id == selectedId }
+    val caseMessages = messages.filter { it.conversationId == "case_${request?.id}" }
+    LaunchedEffect(caseMessages.size) {
+        if (caseMessages.isNotEmpty()) messageListState.animateScrollToItem(caseMessages.lastIndex)
+    }
+    Column(Modifier.fillMaxSize().background(ChatCanvas).imePadding()) {
+        val hospital = request?.let { item -> hospitals.firstOrNull { it.id == item.facilityId } }
+        val contactName = when {
+            request == null -> "Yawar care team"
+            currentRole == com.example.data.model.UserRole.PATIENT -> hospital?.name ?: "Yawar care team"
+            else -> request.patientName.ifBlank { "Patient" }
+        }
+        val contactPhone = if (currentRole == com.example.data.model.UserRole.PATIENT) {
+            hospital?.contactPhone.orEmpty()
+        } else {
+            request?.patientPhone.orEmpty()
+        }
+        val whatsappPhone = if (currentRole == com.example.data.model.UserRole.PATIENT) {
+            hospital?.let { it.whatsappPhone.ifBlank { it.contactPhone } }.orEmpty()
+        } else {
+            request?.patientPhone.orEmpty()
+        }
+        val context = LocalContext.current
+        Row(
+            Modifier.fillMaxWidth().background(WhatsAppGreen).padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(shape = CircleShape, color = Color.White.copy(alpha = 0.16f), modifier = Modifier.size(42.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(contactName.take(1).uppercase(Locale.getDefault()), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(contactName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+                Text(
+                    request?.let { "${it.id} · ${it.status.labelEn}" } ?: "Your private care request conversation",
+                    color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp, maxLines = 1
+                )
+            }
+            if (contactPhone.isNotBlank()) {
+                IconButton(onClick = { dial(context, contactPhone) }) {
+                    Icon(Icons.Default.Call, contentDescription = "Call ${contactName}", tint = Color.White)
+                }
+            }
+            if (whatsappPhone.isNotBlank()) {
+                IconButton(onClick = {
+                    val ref = request?.id?.let { " about referral $it" }.orEmpty()
+                    openWhatsApp(context, whatsappPhone, "Hello $contactName, I am contacting you$ref.")
+                }) {
+                    Icon(Icons.Default.Chat, contentDescription = "Open WhatsApp with ${contactName}", tint = Color.White)
+                }
+            }
+        }
+        if (requests.isEmpty()) {
+            EmptyWorkflowState("No care conversations", "A message thread opens when a patient care request is created.")
+            return@Column
+        }
+        LazyRow(
+            Modifier.fillMaxWidth().background(Color.White).padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)
+        ) {
+            items(requests, key = { "thread_${it.id}" }) { item ->
+                FilterChip(
+                    selected = item.id == selectedId,
+                    onClick = { viewModel.selectCareRequest(item.id) },
+                    label = { Text("${item.patientName} · ${item.id}", maxLines = 1) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = com.example.ui.theme.WhatsAppPaleGreen,
+                        selectedLabelColor = WhatsAppGreen
+                    )
+                )
+            }
+        }
+        Box(
+            Modifier.weight(1f).fillMaxWidth().background(ChatCanvas).chatDoodleWallpaper(WhatsAppGreen.copy(alpha = 0.55f))
+        ) {
+            if (caseMessages.isEmpty()) {
+                Text(
+                    "Messages about this request will appear here.",
+                    Modifier.align(Alignment.Center).padding(24.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            } else {
+                LazyColumn(
+                    state = messageListState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(caseMessages, key = { it.id }) { message ->
+                        MessageBubble(message, outgoing = message.senderRole.equals(currentRole.name, ignoreCase = true))
+                    }
+                }
+            }
+        }
+        Surface(color = Color.White, shadowElevation = 4.dp) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Message") },
+                    maxLines = 4,
+                    shape = RoundedCornerShape(24.dp)
+                )
+                val canSend = text.isNotBlank() && request != null
+                IconButton(
+                    onClick = {
+                        val body = text.trim()
+                        if (body.isNotEmpty() && request != null) {
+                            viewModel.sendMessage(body, "case_${request.id}")
+                            text = ""
+                        }
+                    },
+                    enabled = canSend,
+                    modifier = Modifier.size(48.dp).clip(CircleShape)
+                        .background(if (canSend) WhatsAppGreen else WhatsAppGreen.copy(alpha = 0.45f))
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Send message", tint = Color.White, modifier = Modifier.size(21.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MessageBubble(message: MessageEntity, outgoing: Boolean) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start
+    ) {
+        Card(
+            Modifier.widthIn(max = 320.dp),
+            shape = RoundedCornerShape(
+                topStart = 14.dp,
+                topEnd = 14.dp,
+                bottomStart = if (outgoing) 14.dp else 3.dp,
+                bottomEnd = if (outgoing) 3.dp else 14.dp
+            ),
+            colors = CardDefaults.cardColors(containerColor = if (outgoing) ChatBubbleOut else ChatBubbleIn),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Column(Modifier.padding(start = 11.dp, top = 8.dp, end = 11.dp, bottom = 6.dp)) {
+                if (!outgoing) Text(message.senderName, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = WhatsAppGreen)
+                Text(message.content, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)), fontSize = 10.sp, color = ChatMeta)
+                    if (outgoing) Text("✓", color = WhatsAppGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HospitalPayoutsScreen(viewModel: YawarViewModel, canEdit: Boolean) {
+    val hospitals by viewModel.facilities.collectAsState()
+    val payments by viewModel.hospitalPayments.collectAsState()
+    var selectedHospital by remember { mutableStateOf("") }
+    var month by remember { mutableStateOf(SimpleDateFormat("yyyy-MM", Locale.US).format(Date())) }
+    var amount by remember { mutableStateOf("") }
+    var dueDate by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var selectedStatus by remember { mutableStateOf("SCHEDULED") }
+    var menuOpen by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        ScreenHeading("Hospital payouts", "Track each hospital's monthly payout, amount, due date, and payment status.", false, viewModel::refreshWorkflow)
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (canEdit) item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Schedule or record a payout", fontWeight = FontWeight.Bold)
+                        Box {
+                            OutlinedButton(onClick = { menuOpen = true }) { Text(hospitals.firstOrNull { it.id == selectedHospital }?.name ?: "Choose hospital") }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                hospitals.forEach { hospital -> DropdownMenuItem(text = { Text(hospital.name) }, onClick = { selectedHospital = hospital.id; menuOpen = false }) }
+                            }
+                        }
+                        OutlinedTextField(month, { month = it }, label = { Text("Month (YYYY-MM)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(amount, { amount = it }, label = { Text("Amount (AFN)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(dueDate, { dueDate = it }, label = { Text("Due date (YYYY-MM-DD)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(notes, { notes = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth(), maxLines = 2)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selectedStatus == "SCHEDULED", { selectedStatus = "SCHEDULED" }, label = { Text("Scheduled") })
+                            FilterChip(selectedStatus == "PAID", { selectedStatus = "PAID" }, label = { Text("Paid") })
+                        }
+                        Button(onClick = {
+                            val hospitalId = selectedHospital.toLongOrNull()
+                            val value = amount.toDoubleOrNull()
+                            if (hospitalId == null || value == null || dueDate.isBlank()) {
+                                viewModel.showSnackbar("Choose a hospital and enter a valid amount and due date.")
+                            } else {
+                                viewModel.saveHospitalPayout(PaymentInput(hospitalId, month.trim(), value, dueDate.trim(), selectedStatus, notes.trim()))
+                            }
+                        }) { Text("Save monthly payout") }
+                    }
+                }
+            }
+            if (payments.isEmpty()) item { EmptyWorkflowState("No payout records", "Add a hospital payout with its agreed amount and due date. No amounts are invented by the app.") }
+            items(payments, key = { it.id }) { payment ->
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(payment.hospitalName, fontWeight = FontWeight.Bold)
+                        Text("${payment.month.take(7)} · ${payment.amountAf} AFN", fontSize = 14.sp)
+                        Text("Due ${payment.dueDate} · ${if (payment.status == "PAID") "Paid" else "Scheduled"}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        if (payment.paidAt.isNotBlank()) Text("Paid at ${payment.paidAt}", fontSize = 12.sp)
+                        if (payment.notes.isNotBlank()) Text(payment.notes, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ManagerDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> Unit = {}) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val requests by viewModel.appointments.collectAsState()
+    val doctors by viewModel.managedDoctors.collectAsState()
+    val hospitals by viewModel.facilities.collectAsState()
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Text("Yawar manager", Modifier.padding(start = 16.dp, top = 12.dp), fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text("Manage the care queue, hospitals, doctor accounts, and approvals.", Modifier.padding(horizontal = 16.dp, vertical = 4.dp), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TabRow(selectedTabIndex = selectedTab) {
+            listOf("Operations", "Hospitals", "Doctors").forEachIndexed { index, label ->
+                Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(label) })
+            }
+        }
+        when (selectedTab) {
+            0 -> {
+                QueueMetrics(requests)
+                if (requests.isEmpty()) EmptyWorkflowState("No open cases", "The manager can review every request in the shared call-center queue.")
+                else LazyColumn(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(requests, key = { it.id }) { request ->
+                        StaffRequestCard(
+                            request = request,
+                            hospitals = hospitals,
+                            onReview = { viewModel.reviewCareRequest(request.id) },
+                            onRoute = { viewModel.routeCareRequest(request.id, it) },
+                            doctors = doctors,
+                            onAssignDoctor = { viewModel.assignDoctorToRequest(request.id, it) },
+                            onMessage = { viewModel.selectCareRequest(request.id); onOpenMessages() }
+                        )
+                    }
+                }
+            }
+            1 -> HospitalManagement(viewModel, hospitals)
+            else -> DoctorManagement(viewModel, doctors, hospitals)
+        }
+    }
+}
+
+@Composable
+private fun HospitalManagement(viewModel: YawarViewModel, hospitals: List<FacilityEntity>) {
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var whatsapp by remember { mutableStateOf("") }
+    var province by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var logoUrl by remember { mutableStateOf("") }
+    var accountHospital by remember { mutableStateOf("") }
+    var accountEmail by remember { mutableStateOf("") }
+    var accountName by remember { mutableStateOf("") }
+    var accountPhone by remember { mutableStateOf("") }
+    var menu by remember { mutableStateOf(false) }
+    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Add hospital", fontWeight = FontWeight.Bold)
+                    FormField("Hospital name", name) { name = it }
+                    FormField("Contact email", email) { email = it }
+                    FormField("Phone", phone) { phone = it }
+                    FormField("WhatsApp number", whatsapp) { whatsapp = it }
+                    FormField("Province", province) { province = it }
+                    FormField("City", city) { city = it }
+                    FormField("Address", address) { address = it }
+                    FormField("Public logo URL (optional)", logoUrl) { logoUrl = it }
+                    Button(onClick = {
+                        if (name.isBlank()) viewModel.showSnackbar("Enter the hospital name.")
+                        else {
+                            viewModel.addHospital(HospitalInput(name.trim(), email.trim(), phone.trim(), whatsapp.trim(), province.trim(), city.trim(), address.trim(), logoUrl.trim()))
+                            name = ""; email = ""; phone = ""; whatsapp = ""; province = ""; city = ""; address = ""; logoUrl = ""
+                        }
+                    }) { Text("Add hospital") }
+                }
+            }
+        }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Create hospital login", fontWeight = FontWeight.Bold)
+                    Box {
+                        OutlinedButton(onClick = { menu = true }) { Text(hospitals.firstOrNull { it.id == accountHospital }?.name ?: "Choose hospital") }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            hospitals.forEach { hospital -> DropdownMenuItem(text = { Text(hospital.name) }, onClick = { accountHospital = hospital.id; menu = false }) }
+                        }
+                    }
+                    FormField("Staff full name", accountName) { accountName = it }
+                    FormField("Staff email", accountEmail) { accountEmail = it }
+                    FormField("Phone", accountPhone) { accountPhone = it }
+                    Button(onClick = {
+                        if (accountHospital.isBlank() || accountName.isBlank() || accountEmail.isBlank()) viewModel.showSnackbar("Choose the hospital and enter the staff member's name and email.")
+                        else viewModel.addHospitalAccount(accountHospital, accountEmail, accountName, accountPhone)
+                    }) { Text("Create hospital account") }
+                    Text("The staff member sets a password through Forgot password.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        item { Text("Hospital directory", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
+        items(hospitals, key = { it.id }) { hospital ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    HospitalLogoBadge(hospital.name, size = 42.dp, logoUrl = hospital.logoFile, hospitalId = hospital.id)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(hospital.name, fontWeight = FontWeight.SemiBold)
+                        Text("${hospital.district}, ${hospital.province} · ${hospital.contactPhone}", fontSize = 11.sp)
+                    }
+                    if (hospital.id.toLongOrNull() != null) TextButton(onClick = { viewModel.removeHospital(hospital.id) }) { Text("Remove") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DoctorManagement(viewModel: YawarViewModel, doctors: List<com.example.data.auth.WorkflowDoctor>, hospitals: List<FacilityEntity>) {
+    var fullName by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var specialty by remember { mutableStateOf("") }
+    var license by remember { mutableStateOf("") }
+    var photoUrl by remember { mutableStateOf("") }
+    var hospitalId by remember { mutableStateOf("") }
+    var expanded by remember { mutableStateOf(false) }
+    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Add doctor account", fontWeight = FontWeight.Bold)
+                    FormField("Doctor's full name", fullName) { fullName = it }
+                    FormField("Email", email) { email = it }
+                    FormField("Phone", phone) { phone = it }
+                    FormField("Specialty", specialty) { specialty = it }
+                    FormField("Medical license number", license) { license = it }
+                    FormField("Doctor photo URL (optional)", photoUrl) { photoUrl = it }
+                    Box {
+                        OutlinedButton(onClick = { expanded = true }) { Text(hospitals.firstOrNull { it.id == hospitalId }?.name ?: "Affiliated hospital (optional)") }
+                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            hospitals.forEach { hospital -> DropdownMenuItem(text = { Text(hospital.name) }, onClick = { hospitalId = hospital.id; expanded = false }) }
+                        }
+                    }
+                    Button(onClick = {
+                        if (fullName.isBlank() || email.isBlank() || specialty.isBlank() || license.isBlank()) viewModel.showSnackbar("Enter the doctor's name, email, specialty and license number.")
+                        else {
+                            viewModel.addDoctor(email, fullName, phone, specialty, license, hospitalId, photoUrl)
+                            fullName = ""; email = ""; phone = ""; specialty = ""; license = ""; hospitalId = ""; photoUrl = ""
+                        }
+                    }) { Text("Create doctor account") }
+                    Text("New doctor accounts start unverified. Verify credentials before they receive referrals.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        item { Text("Doctor accounts", fontWeight = FontWeight.Bold, fontSize = 17.sp) }
+        if (doctors.isEmpty()) item { Text("No manager-created doctor accounts yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        items(doctors, key = { it.id }) { doctor ->
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(doctor.name, fontWeight = FontWeight.Bold)
+                    Text("${doctor.specialty} · ${doctor.hospitalAffiliation}", fontSize = 12.sp)
+                    Text("License: ${doctor.licenseNo} · ${doctor.verificationStatus}", fontSize = 12.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!doctor.isVerified) Button(onClick = { viewModel.setDoctorVerified(doctor.id, true) }) { Text("Verify") }
+                        else OutlinedButton(onClick = { viewModel.setDoctorVerified(doctor.id, false) }) { Text("Revoke verification") }
+                        TextButton(onClick = { viewModel.removeDoctor(doctor.id) }) { Text("Deactivate") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QueueMetrics(requests: List<AppointmentEntity>, extraPending: Int = 0) {
+    val waiting = requests.count { it.status == AppointmentStatus.SUBMITTED || it.status == AppointmentStatus.UNDER_REVIEW }
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        MetricCard("Waiting", waiting.toString(), Modifier.weight(1f))
+        MetricCard("At hospital", requests.count { it.status == AppointmentStatus.AWAITING_PROVIDER }.toString(), Modifier.weight(1f))
+        MetricCard("Records pending", extraPending.toString(), Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
+    Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
+            Text(title, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ScreenHeading(title: String, subtitle: String, refreshing: Boolean, onRefresh: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+            Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        IconButton(onClick = onRefresh, enabled = !refreshing) { Icon(Icons.Default.Refresh, contentDescription = "Refresh shared records") }
+    }
+}
+
+@Composable
+private fun RequestSummary(request: AppointmentEntity) {
+    Text(request.patientName.ifBlank { "Patient" }, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    Text("${request.id} · ${request.specialty} · ${request.urgency}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+    if (request.reasonForCare.isNotBlank()) Text(request.reasonForCare, fontSize = 14.sp)
+    if (request.symptomsSummary.isNotBlank()) Text(request.symptomsSummary, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("${request.province} · ${request.visitType.labelEn}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun EmptyWorkflowState(title: String, text: String) {
+    Column(Modifier.fillMaxWidth().padding(30.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun ContactButtons(phone: String, whatsappPhone: String, message: String) {
+    val context = LocalContext.current
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { dial(context, phone) }) { Icon(Icons.Default.Call, null); Text("Call hospital") }
+        OutlinedButton(onClick = { openWhatsApp(context, whatsappPhone, message) }) { Icon(Icons.Default.Chat, null); Text("WhatsApp") }
+    }
+}
+
+@Composable
+private fun FormField(label: String, value: String, onValueChange: (String) -> Unit) {
+    OutlinedTextField(value, onValueChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = label != "Address")
+}
+
+private fun dial(context: android.content.Context, phone: String) {
+    val number = phone.substringBefore('/').trim()
+    if (number.isNotBlank()) runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}"))) }
+}
+
+private fun openWhatsApp(context: android.content.Context, phone: String, message: String) {
+    val digits = phone.substringBefore('/').filter { it.isDigit() }
+    if (digits.isBlank()) return
+    val intl = if (digits.startsWith("0")) "93${digits.drop(1)}" else digits
+    val encoded = URLEncoder.encode(message, Charsets.UTF_8.name())
+    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$intl?text=$encoded"))) }
+}
