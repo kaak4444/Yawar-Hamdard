@@ -254,7 +254,7 @@ fun FacilityDetailDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // About section with clear text
+                // Summary generated from the contracted facility record.
                 Text(
                     text = "About:",
                     fontWeight = FontWeight.Bold,
@@ -264,23 +264,27 @@ fun FacilityDetailDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                val aboutText = buildString {
-                    append("${facility.name} is an accredited medical healthcare institution in ${facility.province} partnered with Yawar Hamdard Health Consulting Services (YHCS).\n\n")
-                    append("It offers high-quality clinical care with key departments including ${facility.departments.joinToString(", ")}. ")
-                    append("The hospital features inpatient wards, advanced diagnostics, modern laboratories, and emergency medical services (${if (facility.hasEmergency24h) "24/7 Emergency & Trauma Active" else "Standard Clinic Hours"}).\n\n")
-                    append("Address: ${facility.address}\n")
-                    append("Reception Phone: ${facility.contactPhone}\n")
-                    append("Emergency Desk: ${facility.emergencyPhone}\n")
-                    append("YHCS 24/7 Desk: +93 707 438 303\n")
-                    append("Accepted Health Programmes: ${facility.acceptedProgrammes.joinToString(", ")}")
-                }
-
                 Text(
-                    text = aboutText,
+                    text = "${facility.name} is a contracted YHCS facility in ${facility.province}. Services listed: ${facility.departments.joinToString(", ")}.",
                     fontSize = 13.sp,
                     color = Ink,
                     lineHeight = 20.sp
                 )
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Text("Location:", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Ink)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(facility.address, fontSize = 13.sp, color = Ink, lineHeight = 19.sp)
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Contact numbers:", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Ink)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(facility.contactPhone, fontSize = 13.sp, color = Ink, lineHeight = 19.sp)
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Services:", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Ink)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(facility.departments.joinToString(", "), fontSize = 13.sp, color = Ink, lineHeight = 19.sp)
             }
         },
         confirmButton = {
@@ -289,10 +293,11 @@ fun FacilityDetailDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (facility.contactPhone.isNotBlank()) {
+                val primaryPhone = facility.contactPhone.substringBefore("/").trim()
+                if (primaryPhone.isNotBlank()) {
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${facility.contactPhone.replace(" ", "")}"))
+                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${primaryPhone.replace(" ", "")}"))
                             context.startActivity(intent)
                         },
                         modifier = Modifier.weight(1f)

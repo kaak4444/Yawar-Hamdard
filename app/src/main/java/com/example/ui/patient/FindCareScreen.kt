@@ -434,7 +434,7 @@ fun HospitalCardDetailed(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = facility.contactPhone,
+                        text = facility.contactPhone.substringBefore("/").trim(),
                         color = DeepGreen,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
