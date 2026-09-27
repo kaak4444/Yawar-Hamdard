@@ -1,0 +1,6 @@
+{
+  "name": "Yawar Hamdard",
+  "description": "Bilingual healthcare coordination platform for Yawar Hamdard Health Consulting Services in Afghanistan, connecting patients, doctors, and care coordinators.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

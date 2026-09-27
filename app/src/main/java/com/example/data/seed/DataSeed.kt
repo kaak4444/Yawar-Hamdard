@@ -1,0 +1,812 @@
+package com.example.data.seed
+
+import com.example.data.local.AppointmentEntity
+import com.example.data.local.ClaimEntity
+import com.example.data.local.CoordinationCaseEntity
+import com.example.data.local.DoctorEntity
+import com.example.data.local.FacilityEntity
+import com.example.data.local.MessageEntity
+import com.example.data.model.AppointmentStatus
+import com.example.data.model.ClaimStatus
+import com.example.data.model.ServiceItem
+import com.example.data.model.VisitType
+
+object DataSeed {
+
+    /**
+     * 7 Verified Core Healthcare Consulting & Coordination Services of YHCS
+     * (Medical Evacuation and Virtual Visits excluded per official provider scope)
+     */
+    val yawarServices = listOf(
+        ServiceItem(
+            id = "srv_member",
+            titleEn = "Member & Customer Services",
+            titleFa = "خدمات اعضا و مشتریان",
+            titlePs = "د غړو او پیرودونکو خدمتونه",
+            oneSentencePromise = "Dedicated 24/7 multilingual healthcare coordination, provider guidance, and immediate appointment arrangement for individuals and corporate members.",
+            description = "YHCS acts as the primary contact point for navigating Afghanistan's healthcare network. We provide verified specialist matching, appointment scheduling, and patient navigation across all 34 provinces.",
+            forWhom = "Individual members, families, and partner corporate employees across Afghanistan.",
+            whatWeCoordinate = "Specialist matching, appointment arrangement, direct settlement verification, translation, and tele-support.",
+            pathwaySteps = listOf(
+                "Submit appointment request via mobile app or call center (+93 707 438 303)",
+                "Dedicated YHCS coordinator reviews clinical needs and specialist availability",
+                "Appointment confirmed with verified hospital reception and physician",
+                "SMS/WhatsApp confirmation issued with clinical preparation guidance"
+            ),
+            requiredDocuments = listOf("Government ID / Tazkira", "Prior prescriptions / lab work (if any)", "Corporate Member ID (if applicable)"),
+            iconName = "badge"
+        ),
+        ServiceItem(
+            id = "srv_risk",
+            titleEn = "Health-Risk Assessment & Management",
+            titleFa = "ارزیابی و مدیریت خطرات صحی",
+            titlePs = "د روغتیایی خطرونو ارزونه او مدیریت",
+            oneSentencePromise = "Systematic workplace and personal health profiling to preemptively detect chronic illness and clinical vulnerabilities.",
+            description = "Comprehensive occupational health assessments, cardiovascular risk stratification, and chronic disease management for organizations and individuals in Afghanistan.",
+            forWhom = "Corporations, NGOs, international agencies, and individuals seeking preventative health oversight.",
+            whatWeCoordinate = "Biometric screening panels, laboratory diagnostics, physician review, and personalized preventive action plans.",
+            pathwaySteps = listOf(
+                "Structured digital health intake questionnaire",
+                "Baseline diagnostic battery at accredited partner hospital",
+                "Physician clinical review and risk scoring",
+                "Personalized preventive action plan and periodic monitoring"
+            ),
+            requiredDocuments = listOf("Basic health questionnaire", "Recent diagnostic reports", "Active medication list"),
+            iconName = "health_and_safety"
+        ),
+        ServiceItem(
+            id = "srv_assistance",
+            titleEn = "Medical Assistance Coordination",
+            titleFa = "هماهنگی کمک‌های طبی و عاجل",
+            titlePs = "د طبي مرستو همغږي",
+            oneSentencePromise = "Round-the-clock clinical navigation connecting patients to verified emergency departments, specialty consults, and second opinions.",
+            description = "When acute illness strikes, YHCS coordinates immediate hospital admissions, fast-tracks diagnostics, and provides continuous clinical case monitoring with verified Afghan specialists.",
+            forWhom = "Patients requiring urgent diagnostics, second surgical opinions, or complex multi-specialty care.",
+            whatWeCoordinate = "Bed reservation, hospital reception notification, ICU readiness confirmation, and diagnostic priority routing.",
+            pathwaySteps = listOf(
+                "Urgent request intake with clinical triage review",
+                "Matching with verified hospital facility and specialist",
+                "Bed and specialist secured with minimal administrative delay",
+                "Continuous monitoring of patient status until discharge"
+            ),
+            requiredDocuments = listOf("Current clinical referral or hospital notes", "Diagnostic imaging (X-Ray, CT, Ultrasound)", "Emergency contact details"),
+            iconName = "medical_services"
+        ),
+        ServiceItem(
+            id = "srv_claims",
+            titleEn = "Medical Claims & Direct Billing",
+            titleFa = "مدیریت دعاوی و تداوی بدون پول",
+            titlePs = "د طبي ادعاوو او مستقیم بلینګ مدیریت",
+            oneSentencePromise = "Transparent cashless hospital admissions and rapid reimbursement processing with thorough clinical audit.",
+            description = "We eliminate financial friction at the point of care by auditing itemized invoices, verifying policy eligibility, and administering direct cashless settlement with partner hospitals.",
+            forWhom = "Corporate healthcare beneficiaries, insured patients, and partner medical facilities.",
+            whatWeCoordinate = "Direct billing guarantee letters, medical billing auditing, receipt validation, and clinical cost containment.",
+            pathwaySteps = listOf(
+                "Submit itemized medical invoice and doctor prescription via app",
+                "YHCS medical claims auditor verifies treatments against tariff schedule",
+                "Direct settlement approved or reimbursement disbursed to member",
+                "Detailed statement of benefits delivered digitally"
+            ),
+            requiredDocuments = listOf("Itemized hospital invoice", "Doctor prescription and diagnostic order", "Payment receipt or discharge slip"),
+            iconName = "receipt_long"
+        ),
+        ServiceItem(
+            id = "srv_network",
+            titleEn = "Healthcare Network & Provider Administration",
+            titleFa = "مدیریت شبکه و ارائه‌دهندگان خدمات صحی",
+            titlePs = "د روغتیایی شبکې او وړاندې کوونکو مدیریت",
+            oneSentencePromise = "Rigorous credentialing, MoPH compliance inspection, and ongoing quality supervision of 17+ premier Afghan hospitals.",
+            description = "YHCS continually inspects and audits private and tertiary hospitals across Afghanistan, maintaining verified facility profiles, emergency readiness standards, and fee transparency.",
+            forWhom = "Hospitals, medical centers, clinics, and independent specialist physicians seeking network affiliation.",
+            whatWeCoordinate = "Provider credentialing, MoPH licensing verification, service level agreements, and clinical tariff standardization.",
+            pathwaySteps = listOf(
+                "Hospital or specialist submits application and MoPH licenses",
+                "YHCS clinical audit team conducts physical on-site facility inspection",
+                "Credentialing committee approval and contract execution",
+                "Listing in verified national directory with quarterly reviews"
+            ),
+            requiredDocuments = listOf("MoPH Operating License", "Facility equipment audit", "Specialist credentials and diplomas"),
+            iconName = "domain"
+        ),
+        ServiceItem(
+            id = "srv_quality",
+            titleEn = "Healthcare Quality Assurance & Accreditation",
+            titleFa = "تضمین کیفیت و اعتباربخشی خدمات صحی",
+            titlePs = "د روغتیایی کیفیت ډاډ او اعتبار ورکول",
+            oneSentencePromise = "Benchmarking clinical protocols, patient safety standards, and infection control across Afghan healthcare institutions.",
+            description = "We assist hospitals and healthcare organizations in adopting international clinical quality frameworks, improving diagnostic accuracy, and maintaining patient safety guidelines.",
+            forWhom = "Healthcare facility directors, clinical department heads, and development partners in health.",
+            whatWeCoordinate = "Clinical audit, infection control assessment, patient safety protocol implementation, and clinical staff workshops.",
+            pathwaySteps = listOf(
+                "Initial institutional clinical audit",
+                "Gap analysis against MoPH and international safety benchmarks",
+                "Corrective action plan implementation and clinical staff coaching",
+                "Accreditation certificate issuance with annual re-assessment"
+            ),
+            requiredDocuments = listOf("Institutional quality manual", "Infection control records", "Clinical incident logs"),
+            iconName = "verified"
+        ),
+        ServiceItem(
+            id = "srv_advisory",
+            titleEn = "Health Advisory & Consulting Services",
+            titleFa = "مشاوره‌های استراتژیک و تخصصی صحت",
+            titlePs = "روغتیایی مشورې او تخصصي خدمات",
+            oneSentencePromise = "Strategic counsel on healthcare management, public health policy, third-party administration, and medical procurement.",
+            description = "Leveraging extensive Afghan health sector leadership, YHCS advises government entities, NGOs, donors, and private enterprises on health system resilience and project execution.",
+            forWhom = "Donors, international development agencies, Ministry of Public Health, and healthcare investors.",
+            whatWeCoordinate = "Feasibility studies, health benefit plan design, supply chain auditing, and health workforce assessments.",
+            pathwaySteps = listOf(
+                "Terms of reference development and scope definition",
+                "Field research and national healthcare stakeholder interviews",
+                "Evidence-based analytical report and executive roadmap",
+                "Implementation oversight and milestone evaluations"
+            ),
+            requiredDocuments = listOf("Project charter / Terms of Reference", "Institutional brief"),
+            iconName = "business_center"
+        )
+    )
+
+    /**
+     * Authentic 4 Specialist Doctors from doctors.json
+     */
+    val sampleDoctors = listOf(
+        DoctorEntity(
+            id = "doc_momand",
+            name = "Dr. Abdul Wasi Momand",
+            specialty = "Sonology & General Medicine",
+            subspecialty = "Diagnostic Ultrasound & Clinical Sonology",
+            hospitalAffiliation = "Khalid Basir Specialty Hospital",
+            province = "Nimroz",
+            city = "Zaranj",
+            languages = listOf("Pashto", "Dari", "English"),
+            yearsExperience = 8,
+            earliestAvailable = "Saturday at 09:30 AM",
+            inPersonAvailable = true,
+            virtualAvailable = false,
+            homeVisitAvailable = false,
+            consultationFeeAf = "800 AFN",
+            isVerified = true,
+            distanceKm = 0.0,
+            education = "MD, Medical Doctor & Certified Sonologist",
+            licenseNo = "MoPH-AF-2019-8124",
+            weeklySchedule = "Sat - Thu: 08:30 - 15:30",
+            preparationNote = "For abdominal or pelvic ultrasound, please drink 4-5 glasses of water 1 hour prior and avoid urination. Fasting for 6 hours is required for gallbladder and upper abdominal scans.",
+            verificationStatus = "Verified Specialist",
+            photoFile = "abdul-wasi-momand.webp",
+            bio = "Experienced physician and diagnostic sonologist at Khalid Basir Specialty Hospital in Zaranj, specializing in abdominal, pelvic, obstetric, and vascular ultrasound examinations."
+        ),
+        DoctorEntity(
+            id = "doc_katwazi",
+            name = "Dr. Mirwais Wali Katwazi",
+            specialty = "Internal Medicine",
+            subspecialty = "General Internal Medicine Specialist",
+            hospitalAffiliation = "Mirwais Wali Hospital",
+            province = "Paktika",
+            city = "Sharana",
+            languages = listOf("Pashto", "Dari", "English"),
+            yearsExperience = 14,
+            earliestAvailable = "Tomorrow at 10:00 AM",
+            inPersonAvailable = true,
+            virtualAvailable = false,
+            homeVisitAvailable = false,
+            consultationFeeAf = "900 AFN",
+            isVerified = true,
+            distanceKm = 0.0,
+            education = "MD, Kabul University of Medical Sciences; Specialization in General Internal Medicine",
+            licenseNo = "MoPH-AF-2012-6190",
+            weeklySchedule = "Sat - Wed: 09:00 - 16:00",
+            preparationNote = "Please bring all prior blood test results, current prescriptions, glucose monitoring records, and medical discharge summaries.",
+            verificationStatus = "Verified Specialist",
+            photoFile = "mirwais-wali-katwazi.webp",
+            bio = "Senior internal medicine specialist with over 14 years of clinical experience in diagnosis and management of chronic diseases, diabetes, hypertension, and infectious diseases in Paktika."
+        ),
+        DoctorEntity(
+            id = "doc_safir",
+            name = "Dr. Safir Khan",
+            specialty = "Pediatrics",
+            subspecialty = "Paediatric Internal Medicine Specialist & MPH",
+            hospitalAffiliation = "Nang Curative Hospital",
+            province = "Nangarhar",
+            city = "Jalalabad",
+            languages = listOf("Pashto", "Dari", "English"),
+            yearsExperience = 12,
+            earliestAvailable = "Today at 03:00 PM",
+            inPersonAvailable = true,
+            virtualAvailable = false,
+            homeVisitAvailable = false,
+            consultationFeeAf = "1,000 AFN",
+            isVerified = true,
+            distanceKm = 0.0,
+            education = "MD, Nangarhar University Medical Faculty; Master of Public Health (MPH); Paediatric Specialist",
+            licenseNo = "MoPH-AF-2014-4902",
+            weeklySchedule = "Sat - Thu: 08:30 - 15:00",
+            preparationNote = "Please bring child's vaccination card (Yellow Card), previous growth charts, and any active medications or syrup bottles.",
+            verificationStatus = "Verified Specialist",
+            photoFile = "safir-khan.webp",
+            bio = "Paediatric specialist and public health practitioner in Jalalabad. Expert in childhood infectious illnesses, pediatric malnutrition management, newborn care, and preventative immunizations."
+        ),
+        DoctorEntity(
+            id = "doc_shinwari",
+            name = "Dr. Idrees Khan Shinwari",
+            specialty = "General Surgery",
+            subspecialty = "General & Laparoscopic Surgery",
+            hospitalAffiliation = "Nang Curative Hospital",
+            province = "Nangarhar",
+            city = "Jalalabad",
+            languages = listOf("Pashto", "Dari"),
+            yearsExperience = 7,
+            earliestAvailable = "Thursday at 10:30 AM",
+            inPersonAvailable = true,
+            virtualAvailable = false,
+            homeVisitAvailable = false,
+            consultationFeeAf = "1,000 AFN",
+            isVerified = false, // Candidate Specialist - Pending Coordinator Verification
+            distanceKm = 0.0,
+            education = "MD, Specialist in General Surgery",
+            licenseNo = "MoPH-AF-2021-9943",
+            weeklySchedule = "Sat - Wed: 09:00 - 14:00",
+            preparationNote = "For surgical consultation, please bring ultrasound or CT scans, complete blood count reports, and maintain 6-hour fasting if same-day ultrasound evaluation is required.",
+            verificationStatus = "Pending Verification",
+            photoFile = "idrees-khan-shinwari-user-supplied.jpeg",
+            bio = "General surgeon specializing in acute abdominal conditions, hernia repair, appendectomy, and wound reconstruction. Currently undergoing YHCS credentialing verification."
+        )
+    )
+
+    /**
+     * Authentic 17 Hospitals and Medical Complexes from hospitals.csv
+     */
+    val sampleFacilities = listOf(
+        FacilityEntity(
+            id = "hosp_01",
+            name = "Al-Hayat Hospital",
+            facilityType = "Curative & Specialty Hospital",
+            province = "Kabul",
+            district = "District 4",
+            address = "Kolala Pushta, Charahi Gul-e-Sorkh, District 4, Kabul",
+            distanceKm = 2.4, // Verified GPS coordinates: 34.5466706, 69.1434671
+            travelTimeMin = 12,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 78 622 2220",
+            contactPhone = "+93 79 922 2220",
+            departments = listOf("Emergency 24/7", "General Surgery", "Internal Medicine", "Obstetrics & Gynecology", "Pediatrics", "Diagnostic Laboratory", "Radiology / Ultrasound"),
+            operatingHours = "Open 24/7 (Emergency & Inpatient)",
+            acceptedProgrammes = listOf("YHCS Direct Settlement", "Corporate Health Plans", "Cashless"),
+            latitude = 34.5466706,
+            longitude = 69.1434671,
+            verificationStatus = "Verified Facility",
+            logoFile = "01-al-hayat-hospital-kabul.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Al-Hayat+Hospital+Kabul"
+        ),
+        FacilityEntity(
+            id = "hosp_02",
+            name = "Khalid Basir Specialty Hospital",
+            facilityType = "Specialty Hospital",
+            province = "Nimroz",
+            district = "Zaranj",
+            address = "Zaranj Main Road, Nimroz",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Sonology & Ultrasound", "Emergency Care", "Internal Medicine", "Inpatient Wards"),
+            operatingHours = "Sat - Thu: 08:00 - 18:00 (Emergency 24/7)",
+            acceptedProgrammes = listOf("YHCS Direct Settlement", "Corporate Health Plans"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "02-khalid-basir-hospital-nimroz.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Khalid+Basir+Hospital+Nimroz"
+        ),
+        FacilityEntity(
+            id = "hosp_03",
+            name = "Eltiam Curative Hospital",
+            facilityType = "Curative Hospital",
+            province = "Takhar",
+            district = "Taloqan",
+            address = "Center Road, Taloqan, Takhar",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Emergency", "Internal Medicine", "Pediatrics", "Pharmacy"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "03-eltiam-curative-hospital-takhar.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Eltiam+Hospital+Takhar"
+        ),
+        FacilityEntity(
+            id = "hosp_04",
+            name = "Nang Curative Hospital",
+            facilityType = "Curative Hospital",
+            province = "Nangarhar",
+            district = "Jalalabad",
+            address = "Customs Road / Near University, Jalalabad, Nangarhar",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("General Surgery", "Pediatrics", "Emergency Care", "Maternity", "Pathology Lab"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement", "Cashless"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "04-nang-curative-hospital-nangarhar.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Nang+Curative+Hospital+Jalalabad"
+        ),
+        FacilityEntity(
+            id = "hosp_05",
+            name = "Mohmand Hospital",
+            facilityType = "Specialty Hospital",
+            province = "Kandahar",
+            district = "Kandahar City",
+            address = "Aino Mena / Main Boulevard, Kandahar",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Cardiology", "Emergency Care", "Trauma & Orthopedics", "Diagnostic Radiology"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement", "Corporate Health Plans"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "05-mohmand-hospital-kandahar.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Mohmand+Hospital+Kandahar"
+        ),
+        FacilityEntity(
+            id = "hosp_06",
+            name = "Abdali Medical Complex",
+            facilityType = "Medical Complex",
+            province = "Khost",
+            district = "Khost City",
+            address = "Main Center Road, Khost City",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Emergency", "General Surgery", "Internal Medicine"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "06-abdali-medical-complex-khost.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Abdali+Medical+Complex+Khost"
+        ),
+        FacilityEntity(
+            id = "hosp_07",
+            name = "Ettemaad Medical Complex",
+            facilityType = "Medical Complex",
+            province = "Zabul",
+            district = "Qalat",
+            address = "Kabul-Kandahar Highway, Qalat, Zabul",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Emergency Care", "Outpatient Clinics", "Diagnostic Laboratory"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "07-ettemaad-medical-complex-zabul.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Ettemaad+Medical+Complex+Zabul"
+        ),
+        FacilityEntity(
+            id = "hosp_08",
+            name = "Mirwais Wali Hospital",
+            facilityType = "Curative & Internal Medicine Hospital",
+            province = "Paktika",
+            district = "Sharana",
+            address = "Sharana Central Avenue, Paktika",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Internal Medicine", "Emergency 24/7", "Pediatrics", "Inpatient Wards"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "08-mirwais-wali-hospital-paktika.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Mirwais+Wali+Hospital+Paktika"
+        ),
+        FacilityEntity(
+            id = "hosp_09",
+            name = "Aryana Sehat Hospital",
+            facilityType = "Curative Hospital",
+            province = "Ghazni",
+            district = "Ghazni City",
+            address = "Near Provincial Hospital, Ghazni City",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("General Surgery", "Internal Medicine", "Maternity & Gynecology"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "09-aryana-sehat-hospital-ghazni.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Aryana+Sehat+Hospital+Ghazni"
+        ),
+        FacilityEntity(
+            id = "hosp_10",
+            name = "Zubair Hospital",
+            facilityType = "Curative Hospital",
+            province = "Helmand",
+            district = "Lashkar Gah",
+            address = "Main Bazaar / Helmand Road, Lashkar Gah",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Trauma & Emergency", "Surgery", "Diagnostics"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "10-zubair-hospital-helmand.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Zubair+Hospital+Helmand"
+        ),
+        FacilityEntity(
+            id = "hosp_11",
+            name = "KIMS Shifa Hospital",
+            facilityType = "Curative Hospital",
+            province = "Paktia",
+            district = "Gardez",
+            address = "Gardez City Center, Paktia",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Emergency", "Internal Medicine", "Pediatrics"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "11-kims-shifa-hospital-paktia.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=KIMS+Shifa+Hospital+Paktia"
+        ),
+        FacilityEntity(
+            id = "hosp_12",
+            name = "Wakhan Hospital",
+            facilityType = "Curative Hospital",
+            province = "Kunduz",
+            district = "Kunduz City",
+            address = "Bandar-e-Kabul, Kunduz City",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Emergency", "General Medicine", "Surgical Care"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "12-wakhan-hospital-kunduz.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Wakhan+Hospital+Kunduz"
+        ),
+        FacilityEntity(
+            id = "hosp_13",
+            name = "Al-Shafa Hospital",
+            facilityType = "Curative Hospital",
+            province = "Uruzgan",
+            district = "Tarinkot",
+            address = "Tarinkot Main Road, Uruzgan",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Emergency Care", "Outpatient Services", "Pharmacy"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "13-al-shafa-hospital-uruzgan.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Al-Shafa+Hospital+Uruzgan"
+        ),
+        FacilityEntity(
+            id = "hosp_14",
+            name = "Timar 20-Bed Curative Hospital",
+            facilityType = "20-Bed Inpatient Hospital",
+            province = "Badakhshan",
+            district = "Fayzabad",
+            address = "New City (Shahr-e-Naw), Fayzabad, Badakhshan",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("20-Bed Inpatient", "Internal Medicine", "Emergency Care"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "14-timar-hospital-badakhshan.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Timar+Hospital+Badakhshan"
+        ),
+        FacilityEntity(
+            id = "hosp_15",
+            name = "Hasib Habib Curative Hospital",
+            facilityType = "Curative Hospital",
+            province = "Badakhshan",
+            district = "Fayzabad",
+            address = "Central Hospital Road, Fayzabad, Badakhshan",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Curative Care", "Emergency Care", "Diagnostic Laboratory"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "15-hasib-habib-hospital-badakhshan.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Hasib+Habib+Hospital+Badakhshan"
+        ),
+        FacilityEntity(
+            id = "hosp_16",
+            name = "Blossom Healthcare Center",
+            facilityType = "Healthcare & Diagnostic Center",
+            province = "Kabul",
+            district = "District 10",
+            address = "Shahr-e-Naw, District 10, Kabul",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = false,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Specialist Consultations", "Health Screening", "Day Clinic"),
+            operatingHours = "Sat - Thu: 08:00 - 17:00",
+            acceptedProgrammes = listOf("YHCS Direct Settlement", "Health-Risk Assessment"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Center",
+            logoFile = "16-blossom-healthcare-logo-placeholder.svg",
+            mapSearchUrl = "https://maps.google.com/?q=Blossom+Healthcare+Center+Kabul"
+        ),
+        FacilityEntity(
+            id = "hosp_17",
+            name = "Dr. Khair M. Sarwari Hospital",
+            facilityType = "Specialized Surgery & Curative Hospital",
+            province = "Baghlan",
+            district = "Pul-e-Khumri",
+            address = "Bandar-e-Kabul, Pul-e-Khumri, Baghlan",
+            distanceKm = 0.0,
+            travelTimeMin = 0,
+            hasEmergency24h = true,
+            emergencyPhone = "+93 70 743 8303",
+            contactPhone = "+93 70 743 8303",
+            departments = listOf("Specialized Surgery", "Emergency", "Internal Medicine"),
+            operatingHours = "Open 24/7",
+            acceptedProgrammes = listOf("YHCS Direct Settlement"),
+            latitude = 0.0,
+            longitude = 0.0,
+            verificationStatus = "Verified Facility",
+            logoFile = "17-sarwari-hospital-baghlan.jpg",
+            mapSearchUrl = "https://maps.google.com/?q=Dr+Khair+Sarwari+Hospital+Baghlan"
+        )
+    )
+
+    /**
+     * Initial Seed Appointments
+     */
+    val sampleAppointments = listOf(
+        AppointmentEntity(
+            id = "YHCS-2026-8192",
+            patientName = "Ahmad Shah",
+            patientPhone = "+93 70 123 4567",
+            isDependent = false,
+            dependentName = "",
+            dependentRelation = "",
+            specialty = "Sonology & General Medicine",
+            reasonForCare = "Abdominal discomfort and routine liver-kidney ultrasound evaluation",
+            symptomsSummary = "Mild right-upper quadrant fullness after meals for 2 weeks",
+            urgency = "Routine",
+            visitType = VisitType.IN_PERSON,
+            province = "Nimroz",
+            facilityId = "hosp_02",
+            facilityName = "Khalid Basir Specialty Hospital",
+            doctorId = "doc_momand",
+            doctorName = "Dr. Abdul Wasi Momand",
+            appointmentDate = "27 Sep 2026",
+            timeSlot = "09:30 AM",
+            corporateMemberId = "YHCS-CORP-9021",
+            attachedDocuments = listOf("Prior_Ultrasound_Summary.pdf"),
+            contactPreference = "WhatsApp & In-App",
+            status = AppointmentStatus.CONFIRMED,
+            coordinatorNotes = "Hospital reception confirmed slot with Dr. Momand. Notification dispatched to callcenter@yawarconsulting.com.",
+            doctorPreparationNotes = "Fasting for 6 hours required prior to upper abdominal scan. Please drink 4 glasses of water 1 hour before.",
+            emailAlertSentTo = "callcenter@yawarconsulting.com",
+            createdAtTimestamp = System.currentTimeMillis() - 86400000L
+        ),
+        AppointmentEntity(
+            id = "YHCS-2026-9044",
+            patientName = "Bilal Shah",
+            patientPhone = "+93 70 123 4567",
+            isDependent = true,
+            dependentName = "Bilal Shah",
+            dependentRelation = "Son (Age 5)",
+            specialty = "Pediatrics",
+            reasonForCare = "Childhood seasonal cough and growth assessment",
+            symptomsSummary = "Dry cough especially at night, no fever",
+            urgency = "Standard",
+            visitType = VisitType.IN_PERSON,
+            province = "Nangarhar",
+            facilityId = "hosp_04",
+            facilityName = "Nang Curative Hospital",
+            doctorId = "doc_safir",
+            doctorName = "Dr. Safir Khan",
+            appointmentDate = "29 Sep 2026",
+            timeSlot = "03:00 PM",
+            corporateMemberId = "YHCS-CORP-9021",
+            attachedDocuments = listOf("Vaccination_Yellow_Card.pdf"),
+            contactPreference = "WhatsApp",
+            status = AppointmentStatus.SUBMITTED,
+            coordinatorNotes = "Intake logged. Awaiting coordinator review at callcenter@yawarconsulting.com.",
+            doctorPreparationNotes = "Bring child's vaccination card and record of previous allergies.",
+            emailAlertSentTo = "callcenter@yawarconsulting.com",
+            createdAtTimestamp = System.currentTimeMillis() - 14400000L
+        )
+    )
+
+    /**
+     * Initial Seed Claims (Cashless / Direct Billing)
+     */
+    val sampleClaims = listOf(
+        ClaimEntity(
+            id = "CLM-2026-5501",
+            patientName = "Ahmad Shah",
+            claimType = "Outpatient Diagnostic & Ultrasound",
+            providerOrHospital = "Al-Hayat Hospital",
+            dateOfService = "18 Sep 2026",
+            invoiceAmountAf = 4200.0,
+            approvedAmountAf = 4200.0,
+            status = ClaimStatus.APPROVED,
+            documentTypes = listOf("Itemized Hospital Invoice", "Radiologist Report", "Doctor Prescription"),
+            remarks = "Direct settlement approved under YHCS Corporate Health Benefit Program.",
+            submissionDate = "19 Sep 2026"
+        ),
+        ClaimEntity(
+            id = "CLM-2026-6120",
+            patientName = "Ahmad Shah",
+            claimType = "Prescription Medications",
+            providerOrHospital = "Blossom Healthcare Center",
+            dateOfService = "21 Sep 2026",
+            invoiceAmountAf = 1850.0,
+            approvedAmountAf = 0.0,
+            status = ClaimStatus.CLINICAL_REVIEW,
+            documentTypes = listOf("Pharmacy Receipt", "Physician Order"),
+            remarks = "Invoice undergoing tariff schedule verification by YHCS claims team.",
+            submissionDate = "21 Sep 2026"
+        )
+    )
+
+    /**
+     * Coordination cases (maintained for internal DB compatibility)
+     */
+    val sampleCases = emptyList<CoordinationCaseEntity>()
+
+    /**
+     * Initial realistic care threads for YHCS messaging
+     */
+    val sampleMessages = listOf(
+        MessageEntity(
+            id = "msg_001",
+            senderRole = "COORDINATOR",
+            senderName = "Farhad (YHCS Senior Coordinator)",
+            content = "Salam Ahmad Shah Sahib. Your appointment request YHCS-2026-8192 with Dr. Abdul Wasi Momand at Khalid Basir Specialty Hospital has been confirmed for Saturday at 09:30 AM.",
+            timestamp = System.currentTimeMillis() - 7200000L,
+            conversationId = "conv_coord",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        ),
+        MessageEntity(
+            id = "msg_002",
+            senderRole = "COORDINATOR",
+            senderName = "Farhad (YHCS Senior Coordinator)",
+            content = "Please note Dr. Momand's preparation advice: Fasting for 6 hours is requested before the upper abdominal ultrasound scan, and drink 4-5 glasses of water 1 hour prior. Let us know if you need translation support.",
+            timestamp = System.currentTimeMillis() - 7100000L,
+            conversationId = "conv_coord",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        ),
+        MessageEntity(
+            id = "msg_003",
+            senderRole = "PATIENT",
+            senderName = "Ahmad Shah (You)",
+            content = "Wa Alaikum Salam Farhad Sahib. Tashakor for the confirmation. I have already prepared the previous medical tests and will arrive 15 minutes before the time.",
+            timestamp = System.currentTimeMillis() - 4000000L,
+            conversationId = "conv_coord",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        ),
+        MessageEntity(
+            id = "msg_004",
+            senderRole = "COORDINATOR",
+            senderName = "Farhad (YHCS Senior Coordinator)",
+            content = "Excellent. The hospital reception has your YHCS member profile on file. If any unexpected delay happens, call our 24/7 desk directly at +93 707 438 303.",
+            timestamp = System.currentTimeMillis() - 3800000L,
+            conversationId = "conv_coord",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        ),
+        // Dedicated 1-to-1 conversation with Dr. Abdul Wasi Momand
+        MessageEntity(
+            id = "msg_101",
+            senderRole = "DOCTOR",
+            senderName = "Dr. Abdul Wasi Momand",
+            content = "Salam Ahmad Shah. I received your consultation request regarding the abdominal ultrasound. Please make sure not to have any heavy foods for 6 hours prior to the scan.",
+            timestamp = System.currentTimeMillis() - 86400000L,
+            conversationId = "conv_momand",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        ),
+        MessageEntity(
+            id = "msg_102",
+            senderRole = "PATIENT",
+            senderName = "Ahmad Shah (You)",
+            content = "Salam Doctor Sahib. Understood, I will follow the fasting guidelines. Are previous blood tests needed?",
+            timestamp = System.currentTimeMillis() - 43200000L,
+            conversationId = "conv_momand",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        ),
+        MessageEntity(
+            id = "msg_103",
+            senderRole = "DOCTOR",
+            senderName = "Dr. Abdul Wasi Momand",
+            content = "Yes, please bring your recent liver and kidney function panels if you have them. See you on Saturday at Khalid Basir Specialty Hospital.",
+            timestamp = System.currentTimeMillis() - 21600000L,
+            conversationId = "conv_momand",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        ),
+        // Dedicated 1-to-1 conversation with Dr. Safir Khan
+        MessageEntity(
+            id = "msg_201",
+            senderRole = "DOCTOR",
+            senderName = "Dr. Safir Khan",
+            content = "Salam Ahmad Shah. For your pediatric checkup visit, please bring the child's vaccination card and any prior allergy documentation.",
+            timestamp = System.currentTimeMillis() - 172800000L,
+            conversationId = "conv_safir",
+            messageType = "TEXT",
+            deliveryStatus = "READ",
+            isRead = true
+        )
+    )
+}
