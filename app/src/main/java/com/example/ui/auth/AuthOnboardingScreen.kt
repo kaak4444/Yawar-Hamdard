@@ -185,11 +185,11 @@ fun AuthOnboardingScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
-                        painter = painterResource(id = VerifiedImageResources.yawarLogoLockup),
+                        painter = painterResource(id = VerifiedImageResources.yawarLogoCover),
                         contentDescription = "Yawar Hamdard Health Consulting Services",
                         modifier = Modifier
-                            .widthIn(max = 268.dp)
-                            .heightIn(max = 124.dp),
+                            .widthIn(max = 300.dp)
+                            .heightIn(max = 150.dp),
                         contentScale = ContentScale.Fit
                     )
                 }

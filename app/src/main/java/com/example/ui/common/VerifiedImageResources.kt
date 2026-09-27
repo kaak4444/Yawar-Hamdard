@@ -31,6 +31,10 @@ import com.example.ui.theme.DividerSoft
  */
 object VerifiedImageResources {
 
+    /** User-provided YH mark used on the sign-in cover and Android launch screen. */
+    @DrawableRes
+    val yawarLogoCover: Int = R.drawable.yawar_logo_cover
+
     @DrawableRes
     val yawarLogo: Int = R.drawable.yawar_logo_original
 
