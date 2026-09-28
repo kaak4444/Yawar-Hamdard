@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -331,12 +332,19 @@ class MainActivity : ComponentActivity() {
                         exit = fadeOut(animationSpec = tween(durationMillis = 350)) +
                             scaleOut(targetScale = 1.025f, animationSpec = tween(durationMillis = 350))
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.yawar_launch_splash),
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color(0xFF0162D1)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                                contentDescription = null,
+                                modifier = Modifier.size(240.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
                     }
                 }
             }

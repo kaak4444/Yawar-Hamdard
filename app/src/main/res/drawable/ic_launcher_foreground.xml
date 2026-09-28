@@ -7,10 +7,10 @@
 
     <!-- Recreated from the supplied YH emblem SVG and centered in the adaptive-icon safe zone. -->
     <group
-        android:scaleX="0.13415"
-        android:scaleY="0.13415"
-        android:translateX="-9.0"
-        android:translateY="-57.7">
+        android:scaleX="0.10"
+        android:scaleY="0.10"
+        android:translateX="7.1"
+        android:translateY="-29.2">
         <path
             android:fillColor="#FFFFFFFF"
             android:fillType="evenOdd"
