@@ -1,7 +1,5 @@
 package com.example.ui.patient
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -43,7 +41,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
@@ -82,7 +79,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -522,7 +518,6 @@ fun ActiveChatView(
     onTogglePrivacy: (Boolean) -> Unit,
     onSendMessage: (String, String, String, String, Int) -> Unit
 ) {
-    val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
     var messageText by remember { mutableStateOf("") }
@@ -614,7 +609,7 @@ fun ActiveChatView(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = if (isSimulatingTyping) "typing..." else if (conversation.isOnline) "Online • YHCS Secure Channel" else "Offline",
+                            text = if (isSimulatingTyping) "typing..." else if (conversation.isOnline) "Online • YHCS help desk" else "Offline",
                             color = if (isSimulatingTyping) ClinicalGreen else Slate,
                             fontSize = 11.sp,
                             fontWeight = if (isSimulatingTyping) FontWeight.Bold else FontWeight.Normal
@@ -624,21 +619,6 @@ fun ActiveChatView(
 
                 // Header Actions
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Direct Call Support
-                    IconButton(onClick = {
-                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                            data = Uri.parse("tel:+93707438303")
-                        }
-                        context.startActivity(dialIntent)
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Phone,
-                            contentDescription = "Secure Call",
-                            tint = ClinicalGreen,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = Slate)
@@ -662,16 +642,6 @@ fun ActiveChatView(
                                 },
                                 onClick = {
                                     onTogglePrivacy(!privacyMode)
-                                    menuExpanded = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Call 24/7 Operations Desk (+93 707 438 303)", fontSize = 12.sp) },
-                                onClick = {
-                                    val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                                        data = Uri.parse("tel:+93707438303")
-                                    }
-                                    context.startActivity(dialIntent)
                                     menuExpanded = false
                                 }
                             )

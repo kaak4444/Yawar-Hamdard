@@ -17,6 +17,7 @@ import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.PUT
+import retrofit2.http.Query
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -36,7 +37,14 @@ internal data class WorkflowDashboard(
     val profile: WorkflowProfile? = null,
     val directConversation: WorkflowDirectConversation? = null,
     val directConversations: List<WorkflowDirectConversation> = emptyList(),
-    val directMessages: List<WorkflowDirectMessage> = emptyList()
+    val directMessages: List<WorkflowDirectMessage> = emptyList(),
+    val voiceCall: WorkflowVoiceCall? = null,
+    val voiceCalls: List<WorkflowVoiceCall> = emptyList(),
+    val voiceSignals: List<WorkflowVoiceSignal> = emptyList(),
+    val iceServers: List<WorkflowIceServer> = emptyList(),
+    val directAttachment: WorkflowDirectAttachment? = null,
+    val signals: List<WorkflowVoiceSignal> = emptyList(),
+    val turnConfigured: Boolean = false
 )
 
 internal data class WorkflowDirectConversation(
@@ -46,7 +54,8 @@ internal data class WorkflowDirectConversation(
     val participantName: String = "",
     val participantPhone: String = "",
     val lastMessage: String = "",
-    val updatedAtTimestamp: Long = 0L
+    val updatedAtTimestamp: Long = 0L,
+    val unreadCount: Int = 0
 )
 
 internal data class WorkflowDirectMessage(
@@ -54,7 +63,42 @@ internal data class WorkflowDirectMessage(
     val senderRole: String = "",
     val senderName: String = "",
     val content: String = "",
-    val timestamp: Long = 0L
+    val timestamp: Long = 0L,
+    val messageType: String = "TEXT",
+    val attachmentId: String = "",
+    val attachmentName: String = "",
+    val attachmentMimeType: String = "",
+    val attachmentSize: Long = 0L,
+    val voiceDurationSec: Int = 0
+)
+
+internal data class WorkflowDirectAttachment(
+    val filename: String,
+    val mimeType: String,
+    val size: Long,
+    val base64: String
+)
+
+internal data class WorkflowVoiceCall(
+    val id: String,
+    val conversationId: String = "",
+    val requestId: String = "",
+    val status: String = "RINGING",
+    val caller: Boolean = false,
+    val peerName: String = "Yawar contact",
+    val createdAtTimestamp: Long = 0L
+)
+
+internal data class WorkflowVoiceSignal(
+    val id: Long,
+    val type: String,
+    val payload: String = ""
+)
+
+internal data class WorkflowIceServer(
+    val urls: List<String> = emptyList(),
+    val username: String = "",
+    val credential: String = ""
 )
 
 internal data class WorkflowRequest(
@@ -91,6 +135,8 @@ internal data class WorkflowMessage(
     val messageType: String = "TEXT",
     val attachmentName: String = "",
     val attachmentSize: String = "",
+    val attachmentId: String = "",
+    val attachmentMimeType: String = "",
     val voiceDurationSec: Int = 0,
     val deliveryStatus: String = "SENT"
 )
@@ -184,6 +230,8 @@ internal data class AssignDoctorRequest(val doctorId: Long)
 internal data class SendCaseMessage(val requestId: String, val content: String)
 internal data class StartDirectConversation(val supportKey: String)
 internal data class SendDirectMessage(val content: String)
+internal data class SendVoiceSignal(val type: String, val payload: String = "")
+internal data class EmptyWorkflowRequest(val unused: String = "")
 internal data class HospitalInput(
     val name: String,
     val email: String = "",
@@ -235,6 +283,33 @@ internal interface HostingerWorkflowApi {
     @POST("messages")
     suspend fun sendMessage(@Header("Authorization") authorization: String, @Body body: SendCaseMessage): Response<WorkflowApiResponse>
 
+    @GET("requests/{requestId}/messages")
+    suspend fun caseMessages(@Header("Authorization") authorization: String, @Path("requestId") requestId: String): Response<WorkflowApiResponse>
+
+    @Multipart
+    @POST("requests/{requestId}/attachments")
+    suspend fun uploadCaseAttachment(
+        @Header("Authorization") authorization: String,
+        @Path("requestId") requestId: String,
+        @Part("content") content: RequestBody,
+        @Part("voiceDurationSec") voiceDurationSec: RequestBody,
+        @Part file: MultipartBody.Part
+    ): Response<WorkflowApiResponse>
+
+    @GET("requests/{requestId}/attachments/{messageId}")
+    suspend fun caseAttachment(
+        @Header("Authorization") authorization: String,
+        @Path("requestId") requestId: String,
+        @Path("messageId") messageId: String
+    ): Response<WorkflowApiResponse>
+
+    @POST("requests/{requestId}/calls")
+    suspend fun startCaseVoiceCall(
+        @Header("Authorization") authorization: String,
+        @Path("requestId") requestId: String,
+        @Body body: EmptyWorkflowRequest = EmptyWorkflowRequest()
+    ): Response<WorkflowApiResponse>
+
     @GET("direct-conversations")
     suspend fun directConversations(@Header("Authorization") authorization: String): Response<WorkflowApiResponse>
 
@@ -253,6 +328,50 @@ internal interface HostingerWorkflowApi {
         @Path("conversationId") conversationId: String,
         @Body body: SendDirectMessage
     ): Response<WorkflowApiResponse>
+
+    @Multipart
+    @POST("direct-conversations/{conversationId}/attachments")
+    suspend fun uploadDirectAttachment(
+        @Header("Authorization") authorization: String,
+        @Path("conversationId") conversationId: String,
+        @Part("content") content: RequestBody,
+        @Part("voiceDurationSec") voiceDurationSec: RequestBody,
+        @Part file: MultipartBody.Part
+    ): Response<WorkflowApiResponse>
+
+    @GET("direct-conversations/{conversationId}/attachments/{messageId}")
+    suspend fun directAttachment(
+        @Header("Authorization") authorization: String,
+        @Path("conversationId") conversationId: String,
+        @Path("messageId") messageId: String
+    ): Response<WorkflowApiResponse>
+
+    @POST("direct-conversations/{conversationId}/calls")
+    suspend fun startVoiceCall(
+        @Header("Authorization") authorization: String,
+        @Path("conversationId") conversationId: String,
+        @Body body: EmptyWorkflowRequest = EmptyWorkflowRequest()
+    ): Response<WorkflowApiResponse>
+
+    @GET("voice-calls/incoming")
+    suspend fun incomingVoiceCalls(@Header("Authorization") authorization: String): Response<WorkflowApiResponse>
+
+    @GET("voice-calls/{callId}")
+    suspend fun voiceCall(
+        @Header("Authorization") authorization: String,
+        @Path("callId") callId: String,
+        @Query("after") afterSignalId: Long = 0L
+    ): Response<WorkflowApiResponse>
+
+    @POST("voice-calls/{callId}/signals")
+    suspend fun sendVoiceSignal(
+        @Header("Authorization") authorization: String,
+        @Path("callId") callId: String,
+        @Body body: SendVoiceSignal
+    ): Response<WorkflowApiResponse>
+
+    @GET("voice/config")
+    suspend fun voiceConfiguration(@Header("Authorization") authorization: String): Response<WorkflowApiResponse>
 
     @Multipart
     @POST("documents")

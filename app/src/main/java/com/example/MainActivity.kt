@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Chat
@@ -54,6 +55,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.model.AppLanguage
 import com.example.data.model.UserRole
 import com.example.ui.admin.AdminDashboardScreen
@@ -78,6 +80,7 @@ import com.example.ui.workflow.HospitalDashboardScreen
 import com.example.ui.workflow.HospitalPayoutsScreen
 import com.example.ui.workflow.ManagerDashboardScreen
 import com.example.ui.workflow.PatientCareRequestsScreen
+import com.example.ui.workflow.VoiceCallMonitor
 import com.example.ui.theme.YawarTheme
 import com.example.ui.theme.WhatsAppGreen
 import com.example.ui.theme.WhatsAppPaleGreen
@@ -102,6 +105,7 @@ class MainActivity : ComponentActivity() {
                 val passwordResetPending by viewModel.passwordResetPending.collectAsState()
                 val currentLanguage by viewModel.currentLanguage.collectAsState()
                 val lowBandwidth by viewModel.lowBandwidthMode.collectAsState()
+                val unreadMessages by viewModel.unreadDirectMessageCount.collectAsState()
                 val snackbarMessage by viewModel.snackbarMessage.collectAsState()
 
                 val activeDoctor by viewModel.activeDoctorDetail.collectAsState()
@@ -174,7 +178,8 @@ class MainActivity : ComponentActivity() {
                                         PatientBottomNavigation(
                                             selectedTab = currentPatientTab,
                                             onTabSelected = { currentPatientTab = it },
-                                            language = currentLanguage
+                                            language = currentLanguage,
+                                            unreadMessages = unreadMessages
                                         )
                                     }
                                     UserRole.DOCTOR,
@@ -185,7 +190,8 @@ class MainActivity : ComponentActivity() {
                                             selectedTab = currentPatientTab,
                                             onTabSelected = { currentPatientTab = it },
                                             role = currentRole,
-                                            language = currentLanguage
+                                            language = currentLanguage,
+                                            unreadMessages = unreadMessages
                                         )
                                     }
                                 }
@@ -336,6 +342,8 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             }
+
+                            if (isUserLoggedIn) VoiceCallMonitor(viewModel)
                         }
                     }
                     }
@@ -372,7 +380,8 @@ class MainActivity : ComponentActivity() {
 private data class YawarNavItem(
     val icon: ImageVector,
     val label: String,
-    val contentDescription: String
+    val contentDescription: String,
+    val badgeCount: Int = 0
 )
 
 /**
@@ -399,11 +408,24 @@ private fun YawarNavBar(
                 selected = selectedTab == index,
                 onClick = { onTabSelected(index) },
                 icon = {
-                    Icon(
-                        imageVector = item.icon,
-                        contentDescription = item.contentDescription,
-                        modifier = Modifier.size(24.dp)
-                    )
+                    Box {
+                        Icon(
+                            imageVector = item.icon,
+                            contentDescription = if (item.badgeCount > 0) "${item.contentDescription}, ${item.badgeCount} unread" else item.contentDescription,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        if (item.badgeCount > 0) {
+                            Text(
+                                item.badgeCount.coerceAtMost(99).toString(),
+                                modifier = Modifier.align(Alignment.TopEnd)
+                                    .background(WhatsAppGreen, CircleShape)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                lineHeight = 9.sp
+                            )
+                        }
+                    }
                 },
                 label = {
                     Text(
@@ -430,7 +452,8 @@ private fun YawarNavBar(
 fun PatientBottomNavigation(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
-    language: AppLanguage
+    language: AppLanguage,
+    unreadMessages: Int = 0
 ) {
     val scheme = MaterialTheme.colorScheme
     val items = listOf(
@@ -438,7 +461,7 @@ fun PatientBottomNavigation(
         YawarNavItem(Icons.Default.Person, AppStrings.getFindDoctor(language), "Doctors"),
         YawarNavItem(Icons.Default.LocalHospital, AppStrings.getFindHospital(language), "Hospitals"),
         YawarNavItem(Icons.Default.CalendarMonth, AppStrings.getAppointments(language), "Appointments"),
-        YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages")
+        YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages", unreadMessages)
     )
     YawarNavBar(
         items = items,
@@ -454,30 +477,31 @@ fun StaffBottomNavigation(
     selectedTab: Int,
     onTabSelected: (Int) -> Unit,
     role: UserRole,
-    language: AppLanguage
+    language: AppLanguage,
+    unreadMessages: Int = 0
 ) {
     val scheme = MaterialTheme.colorScheme
     val items = when (role) {
         UserRole.ADMIN -> listOf(
             YawarNavItem(Icons.Default.Home, "Manager", "Manager dashboard"),
             YawarNavItem(Icons.Default.ReceiptLong, "Hospital payouts", "Hospital payouts"),
-            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages", unreadMessages),
             YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
         )
         UserRole.CALL_CENTER -> listOf(
             YawarNavItem(Icons.Default.Home, "Case queue", "Call center queue"),
             YawarNavItem(Icons.Default.ReceiptLong, "Hospital payouts", "Hospital payouts"),
-            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages", unreadMessages),
             YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
         )
         UserRole.HOSPITAL -> listOf(
             YawarNavItem(Icons.Default.LocalHospital, "Referrals", "Hospital referrals"),
-            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages", unreadMessages),
             YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
         )
         else -> listOf(
             YawarNavItem(Icons.Default.Home, AppStrings.getSchedule(language), "Dashboard"),
-            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages"),
+            YawarNavItem(Icons.Default.Chat, AppStrings.getMessages(language), "Messages", unreadMessages),
             YawarNavItem(Icons.Default.Person, AppStrings.getProfile(language), "Account")
         )
     }

@@ -1,7 +1,5 @@
 package com.example.ui.common
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,7 +17,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Emergency
-import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -30,7 +28,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,10 +38,9 @@ import com.example.ui.theme.EmergencyRedBg
 @Composable
 fun EmergencyCard(
     language: AppLanguage,
+    onContactCenter: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -100,12 +96,7 @@ fun EmergencyCard(
                 }
 
                 Button(
-                    onClick = {
-                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                            data = Uri.parse("tel:+93707438303")
-                        }
-                        context.startActivity(dialIntent)
-                    },
+                    onClick = onContactCenter,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = EmergencyRed,
                         contentColor = Color.White
@@ -114,13 +105,13 @@ fun EmergencyCard(
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Phone,
-                        contentDescription = "Call YHCS Emergency Support",
+                        imageVector = Icons.Default.Chat,
+                        contentDescription = "Open YHCS support in the app",
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Call Support",
+                        text = "Contact YHCS",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
                     )

@@ -1,7 +1,5 @@
 package com.example.ui.patient
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -57,7 +55,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -111,7 +108,6 @@ fun PatientHomeScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sampleBimaIds = listOf("BIMA-26-0001", "BIMA-26-0002", "BIMA-26-0003", "BIMA-26-0004")
 
-    val context = LocalContext.current
 
     LazyColumn(
         modifier = modifier
@@ -122,7 +118,7 @@ fun PatientHomeScreen(
         // 1. Emergency Hotline Alert
         item {
             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
-                EmergencyCard(language = language)
+                EmergencyCard(language = language, onContactCenter = { onOpenYhcsMessage("YHCS1") })
             }
         }
 
@@ -380,10 +376,7 @@ fun PatientHomeScreen(
                                 }
 
                                 OutlinedButton(
-                                    onClick = {
-                                        val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:+93707438303"))
-                                        context.startActivity(callIntent)
-                                    },
+                                    onClick = { onOpenYhcsMessage("YHCS1") },
                                     colors = ButtonDefaults.outlinedButtonColors(
                                         contentColor = YawarBlue
                                     ),
@@ -394,7 +387,7 @@ fun PatientHomeScreen(
                                     Icon(Icons.Default.Phone, contentDescription = "Call", modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Call 24/7",
+                                        text = "Chat or call",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
@@ -516,17 +509,14 @@ fun PatientHomeScreen(
                         }
 
                         Button(
-                            onClick = {
-                                val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:+93707438303"))
-                                context.startActivity(callIntent)
-                            },
+                            onClick = { onOpenYhcsMessage("YHCS1") },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = YawarBlue,
                                 contentColor = Color.White
                             ),
                             shape = MaterialTheme.shapes.small
                         ) {
-                            Text("Call Desk", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Open in app", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

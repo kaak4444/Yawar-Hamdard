@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yawar Care Workflow API
  * Description: Role-protected care routing, direct YHCS messages, hospital records and payment tracking for the Yawar Hamdard Android app.
- * Version: 1.1.0
+ * Version: 1.2.0
  */
 declare(strict_types=1);
 
@@ -56,6 +56,81 @@ function yh_ensure_direct_message_tables(PDO $db): void
             KEY idx_direct_message_conversation (conversation_id, created_at),
             CONSTRAINT fk_direct_message_conversation FOREIGN KEY (conversation_id) REFERENCES care_direct_conversations(id) ON DELETE CASCADE,
             CONSTRAINT fk_direct_message_sender FOREIGN KEY (sender_user_id) REFERENCES app_users(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS care_direct_reads (
+            conversation_id BIGINT UNSIGNED NOT NULL,
+            user_id BIGINT UNSIGNED NOT NULL,
+            last_read_message_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (conversation_id, user_id),
+            CONSTRAINT fk_direct_read_conversation FOREIGN KEY (conversation_id) REFERENCES care_direct_conversations(id) ON DELETE CASCADE,
+            CONSTRAINT fk_direct_read_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS care_direct_attachments (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            message_id BIGINT UNSIGNED NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            byte_size INT UNSIGNED NOT NULL,
+            voice_duration_sec SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            file_data LONGBLOB NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_direct_attachment_message (message_id),
+            CONSTRAINT fk_direct_attachment_message FOREIGN KEY (message_id) REFERENCES care_direct_messages(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS care_message_attachments (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            message_id BIGINT UNSIGNED NOT NULL,
+            filename VARCHAR(255) NOT NULL,
+            mime_type VARCHAR(100) NOT NULL,
+            byte_size INT UNSIGNED NOT NULL,
+            voice_duration_sec SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            file_data LONGBLOB NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_case_attachment_message (message_id),
+            CONSTRAINT fk_case_attachment_message FOREIGN KEY (message_id) REFERENCES care_messages(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS care_voice_calls (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            conversation_id BIGINT UNSIGNED NULL,
+            request_id VARCHAR(48) NULL,
+            caller_user_id BIGINT UNSIGNED NOT NULL,
+            callee_user_id BIGINT UNSIGNED NOT NULL,
+            status VARCHAR(16) NOT NULL DEFAULT \'RINGING\',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            ended_at DATETIME NULL,
+            PRIMARY KEY (id),
+            KEY idx_voice_callee_status (callee_user_id, status, created_at),
+            KEY idx_voice_conversation_status (conversation_id, status),
+            KEY idx_voice_request_status (request_id, status),
+            CONSTRAINT fk_voice_call_conversation FOREIGN KEY (conversation_id) REFERENCES care_direct_conversations(id) ON DELETE CASCADE,
+            CONSTRAINT fk_voice_call_caller FOREIGN KEY (caller_user_id) REFERENCES app_users(id) ON DELETE CASCADE,
+            CONSTRAINT fk_voice_call_callee FOREIGN KEY (callee_user_id) REFERENCES app_users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS care_voice_signals (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            call_id BIGINT UNSIGNED NOT NULL,
+            sender_user_id BIGINT UNSIGNED NOT NULL,
+            signal_type VARCHAR(16) NOT NULL,
+            payload MEDIUMTEXT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_voice_signal_call (call_id, id),
+            CONSTRAINT fk_voice_signal_call FOREIGN KEY (call_id) REFERENCES care_voice_calls(id) ON DELETE CASCADE,
+            CONSTRAINT fk_voice_signal_sender FOREIGN KEY (sender_user_id) REFERENCES app_users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
     );
     $ready = true;
@@ -133,6 +208,12 @@ function yh_actor(WP_REST_Request $request): array|WP_Error
 function yh_roles(array $actor, array $roles): bool|WP_Error
 {
     return in_array($actor['role'], $roles, true) ? true : yh_error(403, 'Your account does not have access to this action.');
+}
+
+function yh_is_manager_account(array $actor): bool
+{
+    return (string)($actor['role'] ?? '') === 'admin'
+        && strtolower((string)($actor['email'] ?? '')) === 'm.ibrahim@yawarconsulting.com';
 }
 
 function yh_request_access(PDO $db, array $actor, string $id): bool
@@ -253,6 +334,7 @@ function yh_dashboard(WP_REST_Request $request): WP_REST_Response|WP_Error
     if (is_wp_error($actor)) return $actor;
     try {
         $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
         $where = '1=1';
         $params = [];
         if ($actor['role'] === 'patient') { $where = 'r.patient_user_id = ?'; $params[] = (int)$actor['id']; }
@@ -294,9 +376,11 @@ function yh_dashboard(WP_REST_Request $request): WP_REST_Response|WP_Error
         if ($requestIds !== []) {
             $marks = implode(',', array_fill(0, count($requestIds), '?'));
             $messageQuery = $db->prepare(
-                'SELECT m.id, m.request_id, m.sender_user_id, m.body, m.created_at, u.role, p.full_name
+                'SELECT m.id, m.request_id, m.sender_user_id, m.body, m.created_at, u.role, p.full_name,
+                        a.id AS attachment_id, a.filename, a.mime_type, a.byte_size, a.voice_duration_sec
                  FROM care_messages m JOIN app_users u ON u.id = m.sender_user_id
                  LEFT JOIN app_profiles p ON p.user_id = u.id
+                 LEFT JOIN care_message_attachments a ON a.message_id = m.id
                  WHERE m.request_id IN (' . $marks . ') ORDER BY m.created_at ASC LIMIT 2000'
             );
             $messageQuery->execute($requestIds);
@@ -305,8 +389,11 @@ function yh_dashboard(WP_REST_Request $request): WP_REST_Response|WP_Error
                     'id' => 'remote_' . $row['id'], 'senderRole' => strtoupper((string)$row['role']),
                     'senderName' => (string)($row['full_name'] ?? 'Yawar Care Team'), 'content' => (string)$row['body'],
                     'timestamp' => (int)(strtotime((string)$row['created_at'] . ' UTC') * 1000), 'isRead' => false,
-                    'conversationId' => 'case_' . (string)$row['request_id'], 'messageType' => 'TEXT',
-                    'attachmentName' => '', 'attachmentSize' => '', 'voiceDurationSec' => 0, 'deliveryStatus' => 'SENT',
+                    'conversationId' => 'case_' . (string)$row['request_id'],
+                    'messageType' => empty($row['attachment_id']) ? 'TEXT' : (str_starts_with((string)$row['mime_type'], 'audio/') ? 'VOICE' : 'ATTACHMENT'),
+                    'attachmentId' => empty($row['attachment_id']) ? '' : (string)$row['attachment_id'],
+                    'attachmentName' => (string)($row['filename'] ?? ''), 'attachmentMimeType' => (string)($row['mime_type'] ?? ''),
+                    'attachmentSize' => (string)($row['byte_size'] ?? ''), 'voiceDurationSec' => (int)($row['voice_duration_sec'] ?? 0), 'deliveryStatus' => 'SENT',
                 ];
             }
         }
@@ -491,12 +578,115 @@ function yh_send_message(WP_REST_Request $request): WP_REST_Response|WP_Error
     return yh_ok(['id' => 'remote_' . $messageId, 'requestId' => $id, 'senderRole' => strtoupper((string)$actor['role']), 'senderName' => (string)$actor['full_name'], 'content' => $content, 'timestamp' => (int)(microtime(true) * 1000), 'conversationId' => 'case_' . $id, 'messageType' => 'TEXT', 'deliveryStatus' => 'SENT'], 201);
 }
 
+function yh_case_messages_get(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $requestId = sanitize_text_field((string)$request['request_id']);
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (!yh_request_access($db, $actor, $requestId)) return yh_error(404, 'Care conversation not found.');
+        $query = $db->prepare(
+            'SELECT m.id, m.request_id, m.body, m.created_at, u.role, p.full_name,
+                    a.id AS attachment_id, a.filename, a.mime_type, a.byte_size, a.voice_duration_sec
+             FROM care_messages m JOIN app_users u ON u.id = m.sender_user_id
+             LEFT JOIN app_profiles p ON p.user_id = u.id
+             LEFT JOIN care_message_attachments a ON a.message_id = m.id
+             WHERE m.request_id = ? ORDER BY m.id ASC LIMIT 500'
+        );
+        $query->execute([$requestId]);
+        $messages = array_map(static fn(array $row): array => [
+            'id' => 'remote_' . $row['id'], 'senderRole' => strtoupper((string)$row['role']),
+            'senderName' => (string)($row['full_name'] ?? 'Yawar Care Team'), 'content' => (string)$row['body'],
+            'timestamp' => (int)(strtotime((string)$row['created_at'] . ' UTC') * 1000), 'isRead' => false,
+            'conversationId' => 'case_' . (string)$row['request_id'],
+            'messageType' => empty($row['attachment_id']) ? 'TEXT' : (str_starts_with((string)$row['mime_type'], 'audio/') ? 'VOICE' : 'ATTACHMENT'),
+            'attachmentId' => empty($row['attachment_id']) ? '' : (string)$row['attachment_id'],
+            'attachmentName' => (string)($row['filename'] ?? ''), 'attachmentMimeType' => (string)($row['mime_type'] ?? ''),
+            'attachmentSize' => (string)($row['byte_size'] ?? ''), 'voiceDurationSec' => (int)($row['voice_duration_sec'] ?? 0), 'deliveryStatus' => 'SENT',
+        ], $query->fetchAll());
+        return yh_ok(['messages' => $messages]);
+    } catch (Throwable $error) {
+        error_log('Yawar case message read failed: ' . $error->getMessage());
+        return yh_error(503, 'Messages for this care request are temporarily unavailable.');
+    }
+}
+
+function yh_case_attachment_upload(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $requestId = sanitize_text_field((string)$request['request_id']);
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (!yh_request_access($db, $actor, $requestId)) return yh_error(404, 'Care conversation not found.');
+        $files = $request->get_file_params();
+        $file = $files['file'] ?? null;
+        if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$file['tmp_name'])) return yh_error(422, 'Choose an attachment before sending.');
+        $size = (int)($file['size'] ?? 0);
+        if ($size < 1 || $size > 8 * 1024 * 1024) return yh_error(413, 'Attachments must be smaller than 8 MB.');
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string)$file['tmp_name']) ?: '';
+        $allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/webm', 'audio/3gpp'];
+        if (!in_array($mime, $allowed, true)) return yh_error(415, 'This file type is not supported. Use a photo, PDF, or voice recording.');
+        $content = sanitize_textarea_field((string)$request->get_param('content'));
+        if (strlen($content) > 5000) return yh_error(422, 'Keep the caption under 5,000 characters.');
+        $bytes = file_get_contents((string)$file['tmp_name']);
+        if (!is_string($bytes) || strlen($bytes) !== $size) return yh_error(422, 'The attachment could not be read.');
+        $name = sanitize_file_name((string)($file['name'] ?? 'attachment'));
+        $duration = max(0, min(600, (int)$request->get_param('voiceDurationSec')));
+        $db->beginTransaction();
+        $insert = $db->prepare('INSERT INTO care_messages (request_id, sender_user_id, body) VALUES (?, ?, ?)');
+        $insert->execute([$requestId, (int)$actor['id'], $content]);
+        $messageId = (int)$db->lastInsertId();
+        $attachment = $db->prepare('INSERT INTO care_message_attachments (message_id, filename, mime_type, byte_size, voice_duration_sec, file_data) VALUES (?, ?, ?, ?, ?, ?)');
+        $attachment->bindValue(1, $messageId, PDO::PARAM_INT);
+        $attachment->bindValue(2, $name, PDO::PARAM_STR);
+        $attachment->bindValue(3, $mime, PDO::PARAM_STR);
+        $attachment->bindValue(4, $size, PDO::PARAM_INT);
+        $attachment->bindValue(5, $duration, PDO::PARAM_INT);
+        $attachment->bindValue(6, $bytes, PDO::PARAM_LOB);
+        $attachment->execute();
+        $db->commit();
+        return yh_ok(['sent' => true, 'messageId' => 'remote_' . $messageId], 201);
+    } catch (Throwable $error) {
+        if (isset($db) && $db instanceof PDO && $db->inTransaction()) $db->rollBack();
+        error_log('Yawar case attachment send failed: ' . $error->getMessage());
+        return yh_error(503, 'The attachment could not be sent right now.');
+    }
+}
+
+function yh_case_attachment_download(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $requestId = sanitize_text_field((string)$request['request_id']);
+    $messageId = (int)$request['message_id'];
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (!yh_request_access($db, $actor, $requestId)) return yh_error(404, 'Care conversation not found.');
+        $query = $db->prepare('SELECT a.filename, a.mime_type, a.byte_size, a.file_data FROM care_message_attachments a JOIN care_messages m ON m.id = a.message_id WHERE a.message_id = ? AND m.request_id = ? LIMIT 1');
+        $query->execute([$messageId, $requestId]);
+        $attachment = $query->fetch();
+        if ($attachment === false) return yh_error(404, 'Attachment not found.');
+        return yh_ok(['directAttachment' => ['filename' => (string)$attachment['filename'], 'mimeType' => (string)$attachment['mime_type'],
+            'size' => (int)$attachment['byte_size'], 'base64' => base64_encode((string)$attachment['file_data'])]]);
+    } catch (Throwable $error) {
+        error_log('Yawar case attachment read failed: ' . $error->getMessage());
+        return yh_error(503, 'The attachment could not be opened right now.');
+    }
+}
+
 function yh_direct_conversation_row(PDO $db, int $conversationId): ?array
 {
     $query = $db->prepare(
         'SELECT c.id, c.support_key, c.support_user_id, c.participant_user_id, c.updated_at,
                 sp.full_name AS support_name, pp.full_name AS participant_name, pp.phone AS participant_phone,
-                (SELECT m.body FROM care_direct_messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message
+                (SELECT COALESCE(NULLIF(m.body, \'\'), IF(a.mime_type LIKE \'audio/%\', \'Voice message\', \'Attachment\'))
+                   FROM care_direct_messages m LEFT JOIN care_direct_attachments a ON a.message_id = m.id
+                  WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message
          FROM care_direct_conversations c
          JOIN app_users su ON su.id = c.support_user_id
          LEFT JOIN app_profiles sp ON sp.user_id = su.id
@@ -523,6 +713,7 @@ function yh_direct_conversation_json(array $row, array $actor): array
         'participantPhone' => (string)($row['participant_phone'] ?? ''),
         'lastMessage' => (string)($row['last_message'] ?? ''),
         'updatedAtTimestamp' => (int)(strtotime((string)$row['updated_at'] . ' UTC') * 1000),
+        'unreadCount' => (int)($row['unread_count'] ?? 0),
         'isSupportAccount' => $isSupport,
     ];
 }
@@ -530,9 +721,11 @@ function yh_direct_conversation_json(array $row, array $actor): array
 function yh_direct_messages_json(PDO $db, int $conversationId): array
 {
     $query = $db->prepare(
-        'SELECT m.id, m.body, m.created_at, u.role, p.full_name
+        'SELECT m.id, m.body, m.created_at, u.role, p.full_name, a.id AS attachment_id,
+                a.filename, a.mime_type, a.byte_size, a.voice_duration_sec
          FROM care_direct_messages m JOIN app_users u ON u.id = m.sender_user_id
          LEFT JOIN app_profiles p ON p.user_id = u.id
+         LEFT JOIN care_direct_attachments a ON a.message_id = m.id
          WHERE m.conversation_id = ? ORDER BY m.id ASC LIMIT 500'
     );
     $query->execute([$conversationId]);
@@ -542,7 +735,316 @@ function yh_direct_messages_json(PDO $db, int $conversationId): array
         'senderName' => (string)($row['full_name'] ?? 'YHCS'),
         'content' => (string)$row['body'],
         'timestamp' => (int)(strtotime((string)$row['created_at'] . ' UTC') * 1000),
+        'messageType' => empty($row['attachment_id']) ? 'TEXT' : (str_starts_with((string)$row['mime_type'], 'audio/') ? 'VOICE' : 'ATTACHMENT'),
+        'attachmentId' => empty($row['attachment_id']) ? '' : (string)$row['attachment_id'],
+        'attachmentName' => (string)($row['filename'] ?? ''),
+        'attachmentMimeType' => (string)($row['mime_type'] ?? ''),
+        'attachmentSize' => (int)($row['byte_size'] ?? 0),
+        'voiceDurationSec' => (int)($row['voice_duration_sec'] ?? 0),
     ], $query->fetchAll());
+}
+
+function yh_direct_mark_read(PDO $db, int $conversationId, int $userId): void
+{
+    $latest = $db->prepare('SELECT COALESCE(MAX(id), 0) FROM care_direct_messages WHERE conversation_id = ?');
+    $latest->execute([$conversationId]);
+    $lastId = (int)$latest->fetchColumn();
+    $read = $db->prepare(
+        'INSERT INTO care_direct_reads (conversation_id, user_id, last_read_message_id) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE last_read_message_id = GREATEST(last_read_message_id, VALUES(last_read_message_id))'
+    );
+    $read->execute([$conversationId, $userId, $lastId]);
+}
+
+function yh_direct_unread_count(PDO $db, int $conversationId, int $userId): int
+{
+    $query = $db->prepare(
+        'SELECT COUNT(*) FROM care_direct_messages m
+         LEFT JOIN care_direct_reads r ON r.conversation_id = m.conversation_id AND r.user_id = ?
+         WHERE m.conversation_id = ? AND m.sender_user_id <> ? AND m.id > COALESCE(r.last_read_message_id, 0)'
+    );
+    $query->execute([$userId, $conversationId, $userId]);
+    return (int)$query->fetchColumn();
+}
+
+function yh_direct_attachment_upload(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $conversationId = (int)$request['conversation_id'];
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (yh_direct_conversation_access($db, $actor, $conversationId) === null) return yh_error(404, 'Conversation not found.');
+        $files = $request->get_file_params();
+        $file = $files['file'] ?? null;
+        if (!is_array($file) || (int)($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file((string)$file['tmp_name'])) {
+            return yh_error(422, 'Choose an attachment before sending.');
+        }
+        $maxBytes = 8 * 1024 * 1024;
+        $size = (int)($file['size'] ?? 0);
+        if ($size < 1 || $size > $maxBytes) return yh_error(413, 'Attachments must be smaller than 8 MB.');
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file((string)$file['tmp_name']) ?: '';
+        $allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/webm', 'audio/3gpp'];
+        if (!in_array($mime, $allowed, true)) return yh_error(415, 'This file type is not supported. Use an image, PDF, or voice recording.');
+        $name = sanitize_file_name((string)($file['name'] ?? 'attachment'));
+        $content = sanitize_textarea_field((string)$request->get_param('content'));
+        if (strlen($content) > 5000) return yh_error(422, 'Keep the caption under 5,000 characters.');
+        $duration = max(0, min(600, (int)$request->get_param('voiceDurationSec')));
+        $bytes = file_get_contents((string)$file['tmp_name']);
+        if (!is_string($bytes) || strlen($bytes) !== $size) return yh_error(422, 'The attachment could not be read.');
+        $db->beginTransaction();
+        $insert = $db->prepare('INSERT INTO care_direct_messages (conversation_id, sender_user_id, body) VALUES (?, ?, ?)');
+        $insert->execute([$conversationId, (int)$actor['id'], $content]);
+        $messageId = (int)$db->lastInsertId();
+        $attachment = $db->prepare(
+            'INSERT INTO care_direct_attachments (message_id, filename, mime_type, byte_size, voice_duration_sec, file_data)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        $attachment->bindValue(1, $messageId, PDO::PARAM_INT);
+        $attachment->bindValue(2, $name, PDO::PARAM_STR);
+        $attachment->bindValue(3, $mime, PDO::PARAM_STR);
+        $attachment->bindValue(4, $size, PDO::PARAM_INT);
+        $attachment->bindValue(5, $duration, PDO::PARAM_INT);
+        $attachment->bindValue(6, $bytes, PDO::PARAM_LOB);
+        $attachment->execute();
+        $db->prepare('UPDATE care_direct_conversations SET updated_at = UTC_TIMESTAMP() WHERE id = ?')->execute([$conversationId]);
+        $db->commit();
+        return yh_ok(['sent' => true, 'messageId' => 'direct_' . $messageId], 201);
+    } catch (Throwable $error) {
+        if (isset($db) && $db instanceof PDO && $db->inTransaction()) $db->rollBack();
+        error_log('Yawar direct attachment send failed: ' . $error->getMessage());
+        return yh_error(503, 'The attachment could not be sent right now.');
+    }
+}
+
+function yh_direct_attachment_download(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $conversationId = (int)$request['conversation_id'];
+    $messageId = (int)$request['message_id'];
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (yh_direct_conversation_access($db, $actor, $conversationId) === null) return yh_error(404, 'Conversation not found.');
+        $query = $db->prepare(
+            'SELECT a.filename, a.mime_type, a.byte_size, a.file_data
+             FROM care_direct_attachments a JOIN care_direct_messages m ON m.id = a.message_id
+             WHERE a.message_id = ? AND m.conversation_id = ? LIMIT 1'
+        );
+        $query->execute([$messageId, $conversationId]);
+        $attachment = $query->fetch();
+        if ($attachment === false) return yh_error(404, 'Attachment not found.');
+        return yh_ok(['directAttachment' => ['filename' => (string)$attachment['filename'], 'mimeType' => (string)$attachment['mime_type'],
+            'size' => (int)$attachment['byte_size'], 'base64' => base64_encode((string)$attachment['file_data'])]]);
+    } catch (Throwable $error) {
+        error_log('Yawar direct attachment read failed: ' . $error->getMessage());
+        return yh_error(503, 'The attachment could not be opened right now.');
+    }
+}
+
+function yh_voice_call_json(PDO $db, array $call, int $actorId): array
+{
+    $otherId = (int)$call['caller_user_id'] === $actorId ? (int)$call['callee_user_id'] : (int)$call['caller_user_id'];
+    $name = $db->prepare('SELECT p.full_name FROM app_users u LEFT JOIN app_profiles p ON p.user_id = u.id WHERE u.id = ?');
+    $name->execute([$otherId]);
+    return ['id' => (string)$call['id'], 'conversationId' => (string)($call['conversation_id'] ?? ''),
+        'requestId' => (string)($call['request_id'] ?? ''), 'status' => (string)$call['status'],
+        'caller' => (int)$call['caller_user_id'] === $actorId, 'peerName' => (string)($name->fetchColumn() ?: 'Yawar contact'),
+        'createdAtTimestamp' => (int)(strtotime((string)$call['created_at'] . ' UTC') * 1000)];
+}
+
+function yh_voice_call_access(PDO $db, array $actor, int $callId): ?array
+{
+    $query = $db->prepare('SELECT * FROM care_voice_calls WHERE id = ? LIMIT 1');
+    $query->execute([$callId]);
+    $call = $query->fetch();
+    if ($call === false || !in_array((int)$actor['id'], [(int)$call['caller_user_id'], (int)$call['callee_user_id']], true)) return null;
+    if ($call['conversation_id'] !== null && yh_direct_conversation_access($db, $actor, (int)$call['conversation_id']) === null) return null;
+    if ($call['request_id'] !== null && !yh_request_access($db, $actor, (string)$call['request_id'])) return null;
+    return $call;
+}
+
+function yh_voice_call_create(PDO $db, array $actor, ?int $conversationId, ?string $requestId, int $calleeId): array|WP_Error
+{
+    if ((int)$actor['id'] === $calleeId) return yh_error(422, 'You cannot call your own account.');
+    yh_voice_call_expire_stale($db);
+    $active = $db->prepare(
+        'SELECT id FROM care_voice_calls WHERE status IN (\'RINGING\', \'CONNECTING\', \'CONNECTED\')
+         AND ((? IS NOT NULL AND conversation_id = ?) OR (? IS NOT NULL AND request_id = ?)) LIMIT 1'
+    );
+    $active->execute([$conversationId, $conversationId, $requestId, $requestId]);
+    if ($active->fetchColumn() !== false) return yh_error(409, 'There is already an active call in this conversation.');
+    $insert = $db->prepare('INSERT INTO care_voice_calls (conversation_id, request_id, caller_user_id, callee_user_id, status) VALUES (?, ?, ?, ?, \'RINGING\')');
+    $insert->execute([$conversationId, $requestId, (int)$actor['id'], $calleeId]);
+    $query = $db->prepare('SELECT * FROM care_voice_calls WHERE id = ?');
+    $query->execute([(int)$db->lastInsertId()]);
+    return yh_voice_call_json($db, $query->fetch(), (int)$actor['id']);
+}
+
+function yh_voice_call_start_case(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $requestId = sanitize_text_field((string)$request['request_id']);
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (!yh_request_access($db, $actor, $requestId)) return yh_error(404, 'Care conversation not found.');
+        $query = $db->prepare('SELECT patient_user_id, assigned_hospital_id FROM care_requests WHERE id = ? LIMIT 1');
+        $query->execute([$requestId]);
+        $careRequest = $query->fetch();
+        if ($careRequest === false) return yh_error(404, 'Care request not found.');
+        if ((string)$actor['role'] === 'patient') {
+            $provider = false;
+            if ($careRequest['assigned_hospital_id'] !== null) {
+                $providerQuery = $db->prepare('SELECT id FROM app_users WHERE role = \'hospital\' AND hospital_id = ? AND is_active = 1 AND email_verified_at IS NOT NULL ORDER BY id ASC LIMIT 1');
+                $providerQuery->execute([(int)$careRequest['assigned_hospital_id']]);
+                $provider = $providerQuery->fetchColumn();
+            }
+            if ($provider === false) {
+                $supportQuery = $db->prepare('SELECT id FROM app_users WHERE LOWER(email) = ? AND role = \'call_center\' AND is_active = 1 AND email_verified_at IS NOT NULL LIMIT 1');
+                $supportQuery->execute(['info@yawarconsulting.com']);
+                $provider = $supportQuery->fetchColumn();
+            }
+            if ($provider === false) return yh_error(503, 'The hospital or call center account is not available for calls.');
+            $calleeId = (int)$provider;
+        } else {
+            $calleeId = (int)$careRequest['patient_user_id'];
+        }
+        $call = yh_voice_call_create($db, $actor, null, $requestId, $calleeId);
+        if (is_wp_error($call)) return $call;
+        return yh_ok(['voiceCall' => $call], 201);
+    } catch (Throwable $error) {
+        error_log('Yawar case voice call start failed: ' . $error->getMessage());
+        return yh_error(503, 'The call could not be started right now.');
+    }
+}
+
+function yh_voice_call_start(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $conversationId = (int)$request['conversation_id'];
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        $conversation = yh_direct_conversation_access($db, $actor, $conversationId);
+        if ($conversation === null) return yh_error(404, 'Conversation not found.');
+        $calleeId = (int)$conversation['support_user_id'] === (int)$actor['id'] || yh_is_manager_account($actor)
+            ? (int)$conversation['participant_user_id'] : (int)$conversation['support_user_id'];
+        $call = yh_voice_call_create($db, $actor, $conversationId, null, $calleeId);
+        if (is_wp_error($call)) return $call;
+        return yh_ok(['voiceCall' => $call], 201);
+    } catch (Throwable $error) {
+        error_log('Yawar voice call start failed: ' . $error->getMessage());
+        return yh_error(503, 'The call could not be started right now.');
+    }
+}
+
+function yh_voice_incoming(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        yh_voice_call_expire_stale($db);
+        $query = $db->prepare('SELECT * FROM care_voice_calls WHERE callee_user_id = ? AND status = \'RINGING\' ORDER BY id DESC LIMIT 10');
+        $query->execute([(int)$actor['id']]);
+        return yh_ok(['voiceCalls' => array_map(fn(array $call): array => yh_voice_call_json($db, $call, (int)$actor['id']), $query->fetchAll())]);
+    } catch (Throwable $error) {
+        error_log('Yawar incoming call poll failed: ' . $error->getMessage());
+        return yh_error(503, 'Incoming calls are temporarily unavailable.');
+    }
+}
+
+function yh_voice_call_expire_stale(PDO $db): void
+{
+    $db->exec(
+        'UPDATE care_voice_calls SET status = \'ENDED\', ended_at = UTC_TIMESTAMP(), updated_at = UTC_TIMESTAMP()
+         WHERE (status = \'RINGING\' AND created_at < UTC_TIMESTAMP() - INTERVAL 45 SECOND)
+            OR (status = \'CONNECTING\' AND updated_at < UTC_TIMESTAMP() - INTERVAL 3 MINUTE)
+            OR (status = \'CONNECTED\' AND updated_at < UTC_TIMESTAMP() - INTERVAL 8 HOUR)'
+    );
+}
+
+function yh_voice_call_get(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $callId = (int)$request['call_id'];
+    $afterId = max(0, (int)$request->get_param('after'));
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        $call = yh_voice_call_access($db, $actor, $callId);
+        if ($call === null) return yh_error(404, 'Call not found.');
+        $signals = $db->prepare('SELECT id, sender_user_id, signal_type, payload FROM care_voice_signals WHERE call_id = ? AND id > ? AND sender_user_id <> ? ORDER BY id ASC LIMIT 100');
+        $signals->execute([$callId, $afterId, (int)$actor['id']]);
+        return yh_ok(['voiceCall' => yh_voice_call_json($db, $call, (int)$actor['id']), 'signals' => array_map(static fn(array $signal): array => [
+            'id' => (int)$signal['id'], 'type' => (string)$signal['signal_type'], 'payload' => (string)($signal['payload'] ?? ''),
+        ], $signals->fetchAll())]);
+    } catch (Throwable $error) {
+        error_log('Yawar call state read failed: ' . $error->getMessage());
+        return yh_error(503, 'Call status is temporarily unavailable.');
+    }
+}
+
+function yh_voice_signal_send(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $callId = (int)$request['call_id'];
+    $body = yh_body($request);
+    $type = strtoupper(sanitize_key((string)($body['type'] ?? '')));
+    $payload = (string)($body['payload'] ?? '');
+    if (!in_array($type, ['OFFER', 'ANSWER', 'CANDIDATE', 'ACCEPT', 'REJECT', 'HANGUP'], true) || strlen($payload) > 30000) {
+        return yh_error(422, 'Invalid call signal.');
+    }
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        $call = yh_voice_call_access($db, $actor, $callId);
+        if ($call === null) return yh_error(404, 'Call not found.');
+        if (in_array((string)$call['status'], ['ENDED', 'REJECTED'], true)) return yh_error(409, 'This call has already ended.');
+        $db->beginTransaction();
+        $insert = $db->prepare('INSERT INTO care_voice_signals (call_id, sender_user_id, signal_type, payload) VALUES (?, ?, ?, ?)');
+        $insert->execute([$callId, (int)$actor['id'], $type, $payload]);
+        $status = match ($type) { 'ANSWER' => 'CONNECTED', 'ACCEPT' => 'CONNECTING', 'REJECT' => 'REJECTED', 'HANGUP' => 'ENDED', default => (string)$call['status'] };
+        if ($status !== (string)$call['status']) {
+            $db->prepare('UPDATE care_voice_calls SET status = ?, ended_at = IF(? IN (\'ENDED\', \'REJECTED\'), UTC_TIMESTAMP(), ended_at), updated_at = UTC_TIMESTAMP() WHERE id = ?')
+                ->execute([$status, $status, $callId]);
+        }
+        $db->commit();
+        return yh_ok(['sent' => true, 'status' => $status], 201);
+    } catch (Throwable $error) {
+        if (isset($db) && $db instanceof PDO && $db->inTransaction()) $db->rollBack();
+        error_log('Yawar voice signal send failed: ' . $error->getMessage());
+        return yh_error(503, 'Call setup could not continue right now.');
+    }
+}
+
+function yh_voice_configuration(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    try {
+        $config = yh_private_config();
+        $servers = [['urls' => ['stun:stun.l.google.com:19302']]];
+        $turnUrls = array_values(array_filter(array_map('trim', explode(',', (string)($config['voice_turn_urls'] ?? '')))));
+        if ($turnUrls !== [] && !empty($config['voice_turn_shared_secret'])) {
+            $expires = time() + 3600;
+            $username = $expires . ':' . (int)$actor['id'];
+            $credential = base64_encode(hash_hmac('sha1', $username, (string)$config['voice_turn_shared_secret'], true));
+            $servers[] = ['urls' => $turnUrls, 'username' => $username, 'credential' => $credential];
+        }
+        return yh_ok(['iceServers' => $servers, 'turnConfigured' => count($servers) > 1]);
+    } catch (Throwable $error) {
+        error_log('Yawar voice configuration read failed: ' . $error->getMessage());
+        return yh_error(503, 'Call configuration is unavailable.');
+    }
 }
 
 function yh_direct_conversation_access(PDO $db, array $actor, int $conversationId): ?array
@@ -550,8 +1052,17 @@ function yh_direct_conversation_access(PDO $db, array $actor, int $conversationI
     $query = $db->prepare('SELECT * FROM care_direct_conversations WHERE id = ? LIMIT 1');
     $query->execute([$conversationId]);
     $row = $query->fetch();
-    if ($row === false || !in_array((int)$actor['id'], [(int)$row['support_user_id'], (int)$row['participant_user_id']], true)) return null;
-    return $row;
+    if ($row === false) return null;
+    if (in_array((int)$actor['id'], [(int)$row['support_user_id'], (int)$row['participant_user_id']], true)) return $row;
+    if (yh_is_manager_account($actor)) {
+        $profile = yh_direct_support_profiles()[(string)$row['support_key']] ?? null;
+        if ($profile !== null) {
+            $support = $db->prepare('SELECT 1 FROM app_users WHERE id = ? AND LOWER(email) = ? AND role = ? AND is_active = 1 LIMIT 1');
+            $support->execute([(int)$row['support_user_id'], strtolower($profile['email']), $profile['role']]);
+            if ($support->fetchColumn() !== false) return $row;
+        }
+    }
+    return null;
 }
 
 function yh_direct_list(WP_REST_Request $request): WP_REST_Response|WP_Error
@@ -561,16 +1072,35 @@ function yh_direct_list(WP_REST_Request $request): WP_REST_Response|WP_Error
     try {
         $db = yh_workflow_db();
         yh_ensure_direct_message_tables($db);
+        $visibility = 'c.support_user_id = ? OR c.participant_user_id = ?';
+        $params = [(int)$actor['id'], (int)$actor['id']];
+        if (yh_is_manager_account($actor)) {
+            $supportIds = [];
+            $supportUser = $db->prepare('SELECT id FROM app_users WHERE LOWER(email) = ? AND role = ? AND is_active = 1 LIMIT 1');
+            foreach (yh_direct_support_profiles() as $profile) {
+                $supportUser->execute([strtolower($profile['email']), $profile['role']]);
+                $supportId = $supportUser->fetchColumn();
+                if ($supportId !== false) $supportIds[] = (int)$supportId;
+            }
+            if ($supportIds !== []) {
+                $idPlaceholders = implode(',', array_fill(0, count($supportIds), '?'));
+                $visibility .= ' OR c.support_user_id IN (' . $idPlaceholders . ')';
+                foreach ($supportIds as $supportId) $params[] = $supportId;
+            }
+        }
         $query = $db->prepare(
             'SELECT c.id FROM care_direct_conversations c
-             WHERE c.support_user_id = ? OR c.participant_user_id = ?
+             WHERE (' . $visibility . ')
              ORDER BY c.updated_at DESC LIMIT 300'
         );
-        $query->execute([(int)$actor['id'], (int)$actor['id']]);
+        $query->execute($params);
         $conversations = [];
         foreach ($query->fetchAll() as $item) {
             $row = yh_direct_conversation_row($db, (int)$item['id']);
-            if ($row !== null) $conversations[] = yh_direct_conversation_json($row, $actor);
+            if ($row !== null) {
+                $row['unread_count'] = yh_direct_unread_count($db, (int)$item['id'], (int)$actor['id']);
+                $conversations[] = yh_direct_conversation_json($row, $actor);
+            }
         }
         return yh_ok(['directConversations' => $conversations]);
     } catch (Throwable $error) {
@@ -608,6 +1138,7 @@ function yh_direct_start(WP_REST_Request $request): WP_REST_Response|WP_Error
         $conversationId = (int)$db->lastInsertId();
         $row = yh_direct_conversation_row($db, $conversationId);
         if ($row === null) return yh_error(503, 'The YHCS conversation could not be opened.');
+        yh_direct_mark_read($db, $conversationId, (int)$actor['id']);
         return yh_ok([
             'directConversation' => yh_direct_conversation_json($row, $actor),
             'directMessages' => yh_direct_messages_json($db, $conversationId),
@@ -629,6 +1160,7 @@ function yh_direct_get(WP_REST_Request $request): WP_REST_Response|WP_Error
         if (yh_direct_conversation_access($db, $actor, $conversationId) === null) return yh_error(404, 'Conversation not found.');
         $row = yh_direct_conversation_row($db, $conversationId);
         if ($row === null) return yh_error(404, 'Conversation not found.');
+        yh_direct_mark_read($db, $conversationId, (int)$actor['id']);
         return yh_ok([
             'directConversation' => yh_direct_conversation_json($row, $actor),
             'directMessages' => yh_direct_messages_json($db, $conversationId),
@@ -650,6 +1182,7 @@ function yh_direct_send(WP_REST_Request $request): WP_REST_Response|WP_Error
         $db = yh_workflow_db();
         yh_ensure_direct_message_tables($db);
         if (yh_direct_conversation_access($db, $actor, $conversationId) === null) return yh_error(404, 'Conversation not found.');
+        yh_direct_mark_read($db, $conversationId, (int)$actor['id']);
         $db->beginTransaction();
         $insert = $db->prepare('INSERT INTO care_direct_messages (conversation_id, sender_user_id, body) VALUES (?, ?, ?)');
         $insert->execute([$conversationId, (int)$actor['id'], $content]);
@@ -943,12 +1476,23 @@ add_action('rest_api_init', static function (): void {
     register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/route', ['methods' => 'POST', 'callback' => 'yh_route_request', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/documents-complete', ['methods' => 'POST', 'callback' => 'yh_complete_documents', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/messages', ['methods' => 'POST', 'callback' => 'yh_send_message', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/messages', ['methods' => 'GET', 'callback' => 'yh_case_messages_get', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/attachments', ['methods' => 'POST', 'callback' => 'yh_case_attachment_upload', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/attachments/(?P<message_id>\d+)', ['methods' => 'GET', 'callback' => 'yh_case_attachment_download', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/calls', ['methods' => 'POST', 'callback' => 'yh_voice_call_start_case', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/direct-conversations', [
         ['methods' => 'GET', 'callback' => 'yh_direct_list', 'permission_callback' => '__return_true'],
         ['methods' => 'POST', 'callback' => 'yh_direct_start', 'permission_callback' => '__return_true'],
     ]);
     register_rest_route('yh/v1', '/direct-conversations/(?P<conversation_id>\d+)', ['methods' => 'GET', 'callback' => 'yh_direct_get', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/direct-conversations/(?P<conversation_id>\d+)/messages', ['methods' => 'POST', 'callback' => 'yh_direct_send', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/direct-conversations/(?P<conversation_id>\d+)/attachments', ['methods' => 'POST', 'callback' => 'yh_direct_attachment_upload', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/direct-conversations/(?P<conversation_id>\d+)/attachments/(?P<message_id>\d+)', ['methods' => 'GET', 'callback' => 'yh_direct_attachment_download', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/direct-conversations/(?P<conversation_id>\d+)/calls', ['methods' => 'POST', 'callback' => 'yh_voice_call_start', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/voice-calls/incoming', ['methods' => 'GET', 'callback' => 'yh_voice_incoming', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/voice-calls/(?P<call_id>\d+)', ['methods' => 'GET', 'callback' => 'yh_voice_call_get', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/voice-calls/(?P<call_id>\d+)/signals', ['methods' => 'POST', 'callback' => 'yh_voice_signal_send', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/voice/config', ['methods' => 'GET', 'callback' => 'yh_voice_configuration', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/documents', ['methods' => 'POST', 'callback' => 'yh_upload_document', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/documents/(?P<document_id>\d+)', ['methods' => 'GET', 'callback' => 'yh_get_document', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/payments', ['methods' => 'POST', 'callback' => 'yh_save_payment', 'permission_callback' => '__return_true']);

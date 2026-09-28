@@ -1,7 +1,5 @@
 package com.example.ui.common
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,15 +27,12 @@ import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -288,32 +283,12 @@ fun FacilityDetailDialog(
             }
         },
         confirmButton = {
-            val context = LocalContext.current
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = YawarBlue),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                val primaryPhone = facility.contactPhone.substringBefore("/").trim()
-                if (primaryPhone.isNotBlank()) {
-                    OutlinedButton(
-                        onClick = {
-                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${primaryPhone.replace(" ", "")}"))
-                            context.startActivity(intent)
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Phone, contentDescription = "Call", modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Call Desk", fontSize = 12.sp)
-                    }
-                }
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = YawarBlue),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Close", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
+                Text("Close", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
     )

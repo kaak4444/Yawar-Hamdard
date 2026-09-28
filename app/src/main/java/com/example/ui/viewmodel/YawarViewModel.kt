@@ -28,6 +28,9 @@ import com.example.data.auth.SendDirectMessage
 import com.example.data.auth.StartDirectConversation
 import com.example.data.auth.WorkflowDirectConversation
 import com.example.data.auth.WorkflowDirectMessage
+import com.example.data.auth.WorkflowVoiceCall
+import com.example.data.auth.WorkflowIceServer
+import com.example.data.auth.SendVoiceSignal
 import com.example.data.auth.WorkflowDoctor
 import com.example.data.auth.WorkflowHospital
 import com.example.data.auth.WorkflowMessage
@@ -66,7 +69,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import com.example.ui.workflow.WebRtcVoiceEngine
 import java.util.Locale
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -95,6 +101,15 @@ data class BookingDraft(
     val consentGiven: Boolean = false
 )
 
+data class VoiceCallUiState(
+    val callId: String,
+    val peerName: String,
+    val status: String,
+    val outgoing: Boolean,
+    val muted: Boolean = false,
+    val speakerOn: Boolean = false
+)
+
 class YawarViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: YawarRepository
@@ -102,6 +117,10 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     private val workflowApi = HostingerWorkflowApi.create()
     private val authTokenStore = AuthTokenStore(application)
     private var workflowRefreshJob: Job? = null
+    private var directInboxRefreshJob: Job? = null
+    private var incomingCallRefreshJob: Job? = null
+    private var voiceCallPollingJob: Job? = null
+    private var voiceCallEngine: WebRtcVoiceEngine? = null
     private var workflowErrorShown = false
 
     // Role & Language State
@@ -291,6 +310,16 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
             authTokenStore.read()?.let(::startWorkflowPolling)
         } else {
             workflowRefreshJob?.cancel()
+            directInboxRefreshJob?.cancel()
+            incomingCallRefreshJob?.cancel()
+            _directConversations.value = emptyList()
+            _directMessages.value = emptyList()
+            _unreadDirectMessageCount.value = 0
+            _incomingVoiceCalls.value = emptyList()
+            _selectedCareRequestId.value = ""
+            _selectedSupportKey.value = ""
+            _selectedDirectConversationId.value = ""
+            stopVoiceCallLocally()
         }
     }
 
@@ -307,12 +336,20 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         _isUserLoggedIn.value = false
         _currentRole.value = UserRole.PATIENT
         workflowRefreshJob?.cancel()
+        directInboxRefreshJob?.cancel()
+        incomingCallRefreshJob?.cancel()
         _hospitalPayments.value = emptyList()
         _managedDoctors.value = emptyList()
         _appointments.value = emptyList()
         _messages.value = emptyList()
         _userProfile.value = null
         _selectedCareRequestId.value = ""
+        _selectedSupportKey.value = ""
+        _selectedDirectConversationId.value = ""
+        _directConversations.value = emptyList()
+        _directMessages.value = emptyList()
+        _unreadDirectMessageCount.value = 0
+        _incomingVoiceCalls.value = emptyList()
         _emailVerificationPending.value = false
         _passwordResetPending.value = false
         if (token != null) {
@@ -375,16 +412,28 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     val selectedDirectConversationId: StateFlow<String> = _selectedDirectConversationId.asStateFlow()
     private val _directConversations = MutableStateFlow<List<WorkflowDirectConversation>>(emptyList())
     val directConversations: StateFlow<List<WorkflowDirectConversation>> = _directConversations.asStateFlow()
+    private val _unreadDirectMessageCount = MutableStateFlow(0)
+    val unreadDirectMessageCount: StateFlow<Int> = _unreadDirectMessageCount.asStateFlow()
     private val _directMessages = MutableStateFlow<List<WorkflowDirectMessage>>(emptyList())
     val directMessages: StateFlow<List<WorkflowDirectMessage>> = _directMessages.asStateFlow()
     private val _directMessagesLoading = MutableStateFlow(false)
     val directMessagesLoading: StateFlow<Boolean> = _directMessagesLoading.asStateFlow()
+    private val _incomingVoiceCalls = MutableStateFlow<List<WorkflowVoiceCall>>(emptyList())
+    val incomingVoiceCalls: StateFlow<List<WorkflowVoiceCall>> = _incomingVoiceCalls.asStateFlow()
+    private val _voiceCall = MutableStateFlow<VoiceCallUiState?>(null)
+    val voiceCall: StateFlow<VoiceCallUiState?> = _voiceCall.asStateFlow()
 
     private val _workflowRefreshing = MutableStateFlow(false)
     val workflowRefreshing: StateFlow<Boolean> = _workflowRefreshing.asStateFlow()
 
     fun selectCareRequest(id: String) {
         _selectedCareRequestId.value = id
+        _selectedSupportKey.value = ""
+        _selectedDirectConversationId.value = ""
+    }
+
+    fun closeCareRequestMessages() {
+        _selectedCareRequestId.value = ""
         _selectedSupportKey.value = ""
         _selectedDirectConversationId.value = ""
     }
@@ -407,8 +456,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 val conversation = data.directConversation
                     ?: throw IllegalStateException("The YHCS contact could not be opened.")
                 _selectedDirectConversationId.value = conversation.id
-                _directConversations.value = (_directConversations.value.filterNot { it.id == conversation.id } + conversation)
-                    .sortedByDescending { it.updatedAtTimestamp }
+                setDirectConversations(_directConversations.value.filterNot { it.id == conversation.id } + conversation)
                 _directMessages.value = data.directMessages
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -431,8 +479,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         val token = authTokenStore.read() ?: return
         viewModelScope.launch {
             try {
-                val data = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
-                _directConversations.value = data?.directConversations.orEmpty()
+                refreshDirectInboxOnce(token)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 showSnackbar(error.message ?: "Could not load YHCS messages.")
@@ -457,6 +504,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeDirectConversation() {
         _selectedDirectConversationId.value = ""
+        _selectedSupportKey.value = ""
         _directMessages.value = emptyList()
         refreshDirectInbox()
     }
@@ -467,8 +515,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
             val data = workflowApi.directConversation("Bearer $token", conversationId).requireWorkflowSuccess().data
                 ?: throw IllegalStateException("The message service returned no conversation.")
             data.directConversation?.let { conversation ->
-                _directConversations.value = (_directConversations.value.filterNot { it.id == conversation.id } + conversation)
-                    .sortedByDescending { it.updatedAtTimestamp }
+                setDirectConversations(_directConversations.value.filterNot { it.id == conversation.id } + conversation)
             }
             _directMessages.value = data.directMessages
         } catch (error: Exception) {
@@ -491,12 +538,292 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                     .requireWorkflowSuccess()
                 loadDirectConversation(token, conversationId)
                 val inbox = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
-                _directConversations.value = inbox?.directConversations.orEmpty()
+                setDirectConversations(inbox?.directConversations.orEmpty())
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 showSnackbar(error.message ?: "The message could not be sent.")
             }
         }
+    }
+
+    fun sendDirectAttachment(file: File, mimeType: String, filename: String, content: String = "", voiceDurationSec: Int = 0) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send attachments.")
+        val conversationId = _selectedDirectConversationId.value
+        if (conversationId.isBlank()) return showSnackbar("Open a YHCS conversation first.")
+        if (!file.isFile || file.length() !in 1..(8L * 1024 * 1024)) return showSnackbar("Choose a file smaller than 8 MB.")
+        viewModelScope.launch {
+            try {
+                val textType = "text/plain".toMediaType()
+                val part = MultipartBody.Part.createFormData("file", filename, file.asRequestBody(mimeType.toMediaType()))
+                workflowApi.uploadDirectAttachment(
+                    "Bearer $token", conversationId,
+                    content.trim().toRequestBody(textType),
+                    voiceDurationSec.coerceIn(0, 600).toString().toRequestBody(textType),
+                    part
+                ).requireWorkflowSuccess()
+                loadDirectConversation(token, conversationId)
+                val inbox = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
+                setDirectConversations(inbox?.directConversations.orEmpty())
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "The attachment could not be sent.")
+            }
+        }
+    }
+
+    fun sendCaseAttachment(requestId: String, file: File, mimeType: String, filename: String, content: String = "", voiceDurationSec: Int = 0) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send attachments.")
+        if (!file.isFile || file.length() !in 1..(8L * 1024 * 1024)) return showSnackbar("Choose a file smaller than 8 MB.")
+        viewModelScope.launch {
+            try {
+                val textType = "text/plain".toMediaType()
+                val part = MultipartBody.Part.createFormData("file", filename, file.asRequestBody(mimeType.toMediaType()))
+                workflowApi.uploadCaseAttachment(
+                    "Bearer $token", requestId,
+                    content.trim().toRequestBody(textType),
+                    voiceDurationSec.coerceIn(0, 600).toString().toRequestBody(textType),
+                    part
+                ).requireWorkflowSuccess()
+                refreshCaseMessages(requestId)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "The attachment could not be sent.")
+            }
+        }
+    }
+
+    fun downloadCaseAttachment(requestId: String, message: MessageEntity, onReady: (File, String) -> Unit) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to download this attachment.")
+        val messageId = message.id.removePrefix("remote_").toLongOrNull()
+            ?: return showSnackbar("This attachment reference is invalid.")
+        viewModelScope.launch {
+            try {
+                val attachment = workflowApi.caseAttachment("Bearer $token", requestId, messageId.toString())
+                    .requireWorkflowSuccess().data?.directAttachment
+                    ?: throw IllegalStateException("The attachment is unavailable.")
+                val bytes = withContext(Dispatchers.IO) { android.util.Base64.decode(attachment.base64, android.util.Base64.DEFAULT) }
+                if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("This attachment is larger than the supported limit.")
+                val directory = File(getApplication<Application>().cacheDir, "direct-media").apply { mkdirs() }
+                val safeName = attachment.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._-]"), "_").take(120).ifBlank { "attachment" }
+                val file = File(directory, "${System.currentTimeMillis()}_$safeName")
+                withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                onReady(file, attachment.mimeType)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "The attachment could not be downloaded.")
+            }
+        }
+    }
+
+    fun refreshCaseMessages(requestId: String) {
+        val token = authTokenStore.read() ?: return
+        viewModelScope.launch {
+            try {
+                val remote = workflowApi.caseMessages("Bearer $token", requestId).requireWorkflowSuccess().data?.messages.orEmpty()
+                    .map(::toMessage)
+                _messages.value = _messages.value.filterNot { it.conversationId == "case_$requestId" } + remote
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+            }
+        }
+    }
+
+    fun downloadDirectAttachment(message: WorkflowDirectMessage, onReady: (File, String) -> Unit) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to download this attachment.")
+        val conversationId = _selectedDirectConversationId.value
+        val messageId = message.id.removePrefix("direct_").toLongOrNull()
+            ?: return showSnackbar("This attachment reference is invalid.")
+        viewModelScope.launch {
+            try {
+                val attachment = workflowApi.directAttachment("Bearer $token", conversationId, messageId.toString())
+                    .requireWorkflowSuccess().data?.directAttachment
+                    ?: throw IllegalStateException("The attachment is unavailable.")
+                val bytes = withContext(Dispatchers.IO) { android.util.Base64.decode(attachment.base64, android.util.Base64.DEFAULT) }
+                if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("This attachment is larger than the supported limit.")
+                val directory = File(getApplication<Application>().cacheDir, "direct-media").apply { mkdirs() }
+                val safeName = attachment.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._-]"), "_").take(120).ifBlank { "attachment" }
+                val file = File(directory, "${System.currentTimeMillis()}_$safeName")
+                withContext(Dispatchers.IO) { file.writeBytes(bytes) }
+                onReady(file, attachment.mimeType)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "The attachment could not be downloaded.")
+            }
+        }
+    }
+
+    fun refreshIncomingVoiceCalls() {
+        if (incomingCallRefreshJob?.isActive == true) return
+        val token = authTokenStore.read() ?: return
+        incomingCallRefreshJob = viewModelScope.launch {
+            runCatching {
+                workflowApi.incomingVoiceCalls("Bearer $token").requireWorkflowSuccess().data?.voiceCalls.orEmpty()
+            }.onSuccess { calls ->
+                _incomingVoiceCalls.value = calls.filter { it.status == "RINGING" }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+            }
+        }
+    }
+
+    fun startDirectVoiceCall() {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again before calling.")
+        val conversationId = _selectedDirectConversationId.value
+        if (conversationId.isBlank()) return showSnackbar("Open a YHCS conversation first.")
+        if (_voiceCall.value != null) return showSnackbar("Finish the active call before starting another one.")
+        viewModelScope.launch {
+            try {
+                val call = workflowApi.startVoiceCall("Bearer $token", conversationId).requireWorkflowSuccess().data?.voiceCall
+                    ?: throw IllegalStateException("The call could not be started.")
+                beginOutgoingVoiceCall(token, call)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                stopVoiceCallLocally()
+                showSnackbar(error.message ?: "Could not place the internet call.")
+            }
+        }
+    }
+
+    fun startCaseVoiceCall(requestId: String) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again before calling.")
+        if (_voiceCall.value != null) return showSnackbar("Finish the active call before starting another one.")
+        viewModelScope.launch {
+            try {
+                val call = workflowApi.startCaseVoiceCall("Bearer $token", requestId).requireWorkflowSuccess().data?.voiceCall
+                    ?: throw IllegalStateException("The care request contact could not be reached.")
+                beginOutgoingVoiceCall(token, call)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                stopVoiceCallLocally()
+                showSnackbar(error.message ?: "Could not place the internet call.")
+            }
+        }
+    }
+
+    private suspend fun beginOutgoingVoiceCall(token: String, call: WorkflowVoiceCall) {
+        _voiceCall.value = VoiceCallUiState(call.id, call.peerName, "Calling…", outgoing = true)
+        try {
+            val iceServers = workflowApi.voiceConfiguration("Bearer $token").requireWorkflowSuccess().data?.iceServers.orEmpty()
+            val engine = newVoiceEngine(token, call.id, iceServers)
+            voiceCallEngine = engine
+            val offer = engine.createOffer()
+            workflowApi.sendVoiceSignal("Bearer $token", call.id, SendVoiceSignal("OFFER", offer)).requireWorkflowSuccess()
+            pollVoiceCall(token, call.id, startAfter = 0L)
+        } catch (error: Exception) {
+            runCatching { workflowApi.sendVoiceSignal("Bearer $token", call.id, SendVoiceSignal("HANGUP")).requireWorkflowSuccess() }
+            stopVoiceCallLocally()
+            throw error
+        }
+    }
+
+    fun acceptIncomingVoiceCall(call: WorkflowVoiceCall) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to answer.")
+        if (_voiceCall.value != null) return showSnackbar("Finish the active call before answering another one.")
+        _incomingVoiceCalls.value = _incomingVoiceCalls.value.filterNot { it.id == call.id }
+        _voiceCall.value = VoiceCallUiState(call.id, call.peerName, "Answering…", outgoing = false)
+        viewModelScope.launch {
+            try {
+                workflowApi.sendVoiceSignal("Bearer $token", call.id, SendVoiceSignal("ACCEPT")).requireWorkflowSuccess()
+                val initial = workflowApi.voiceCall("Bearer $token", call.id, 0L).requireWorkflowSuccess().data
+                    ?: throw IllegalStateException("The caller could not be reached.")
+                val offer = initial.signals.firstOrNull { it.type == "OFFER" }?.payload
+                    ?: throw IllegalStateException("The call offer is missing. Ask the caller to try again.")
+                val iceServers = workflowApi.voiceConfiguration("Bearer $token").requireWorkflowSuccess().data?.iceServers.orEmpty()
+                val engine = newVoiceEngine(token, call.id, iceServers)
+                voiceCallEngine = engine
+                val answer = engine.acceptOffer(offer)
+                initial.signals.filter { it.type == "CANDIDATE" }.forEach { engine.addRemoteCandidate(it.payload) }
+                workflowApi.sendVoiceSignal("Bearer $token", call.id, SendVoiceSignal("ANSWER", answer)).requireWorkflowSuccess()
+                val cursor = initial.signals.maxOfOrNull { it.id } ?: 0L
+                pollVoiceCall(token, call.id, cursor)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                runCatching { workflowApi.sendVoiceSignal("Bearer $token", call.id, SendVoiceSignal("REJECT")) }
+                stopVoiceCallLocally()
+                showSnackbar(error.message ?: "Could not answer the internet call.")
+            }
+        }
+    }
+
+    fun rejectIncomingVoiceCall(call: WorkflowVoiceCall) {
+        val token = authTokenStore.read() ?: return
+        _incomingVoiceCalls.value = _incomingVoiceCalls.value.filterNot { it.id == call.id }
+        viewModelScope.launch {
+            runCatching { workflowApi.sendVoiceSignal("Bearer $token", call.id, SendVoiceSignal("REJECT")).requireWorkflowSuccess() }
+        }
+    }
+
+    fun endVoiceCall() {
+        val call = _voiceCall.value ?: return
+        val token = authTokenStore.read()
+        voiceCallPollingJob?.cancel()
+        voiceCallPollingJob = null
+        if (token != null) viewModelScope.launch {
+            runCatching { workflowApi.sendVoiceSignal("Bearer $token", call.callId, SendVoiceSignal("HANGUP")).requireWorkflowSuccess() }
+        }
+        stopVoiceCallLocally()
+    }
+
+    fun toggleVoiceCallMute() {
+        val call = _voiceCall.value ?: return
+        val muted = !call.muted
+        voiceCallEngine?.setMuted(muted)
+        _voiceCall.value = call.copy(muted = muted)
+    }
+
+    fun toggleVoiceCallSpeaker() {
+        val call = _voiceCall.value ?: return
+        val speaker = !call.speakerOn
+        voiceCallEngine?.setSpeaker(speaker)
+        _voiceCall.value = call.copy(speakerOn = speaker)
+    }
+
+    private fun newVoiceEngine(token: String, callId: String, servers: List<WorkflowIceServer>): WebRtcVoiceEngine {
+        return WebRtcVoiceEngine(
+            getApplication(), servers,
+            onIceCandidate = { payload -> viewModelScope.launch {
+                runCatching { workflowApi.sendVoiceSignal("Bearer $token", callId, SendVoiceSignal("CANDIDATE", payload)).requireWorkflowSuccess() }
+            } },
+            onConnectionState = { status -> _voiceCall.value = _voiceCall.value?.copy(status = status) }
+        )
+    }
+
+    private fun pollVoiceCall(token: String, callId: String, startAfter: Long) {
+        voiceCallPollingJob?.cancel()
+        voiceCallPollingJob = viewModelScope.launch {
+            var afterId = startAfter
+            while (isActive && _voiceCall.value?.callId == callId) {
+                try {
+                    val response = workflowApi.voiceCall("Bearer $token", callId, afterId).requireWorkflowSuccess().data
+                        ?: throw IllegalStateException("Call status was unavailable.")
+                    response.signals.forEach { signal ->
+                        afterId = maxOf(afterId, signal.id)
+                        when (signal.type) {
+                            "ANSWER" -> voiceCallEngine?.acceptAnswer(signal.payload)
+                            "CANDIDATE" -> voiceCallEngine?.addRemoteCandidate(signal.payload)
+                            "REJECT" -> { stopVoiceCallLocally(); return@launch }
+                            "HANGUP" -> { stopVoiceCallLocally(); return@launch }
+                        }
+                    }
+                    when (response.voiceCall?.status) {
+                        "ENDED", "REJECTED" -> { stopVoiceCallLocally(); return@launch }
+                        "RINGING" -> _voiceCall.value = _voiceCall.value?.copy(status = "Calling…")
+                    }
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    _voiceCall.value = _voiceCall.value?.copy(status = "Reconnecting…")
+                }
+                delay(1200)
+            }
+        }
+    }
+
+    private fun stopVoiceCallLocally() {
+        voiceCallPollingJob?.cancel()
+        voiceCallPollingJob = null
+        voiceCallEngine?.close()
+        voiceCallEngine = null
+        _voiceCall.value = null
     }
 
     fun refreshWorkflow() {
@@ -513,7 +840,18 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startWorkflowPolling(token: String) {
         workflowRefreshJob?.cancel()
+        directInboxRefreshJob?.cancel()
         workflowErrorShown = false
+        directInboxRefreshJob = viewModelScope.launch {
+            while (isActive && _isUserLoggedIn.value && authTokenStore.read() == token) {
+                try {
+                    refreshDirectInboxOnce(token)
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                }
+                delay(10_000)
+            }
+        }
         workflowRefreshJob = viewModelScope.launch {
             while (isActive && _isUserLoggedIn.value && authTokenStore.read() == token) {
                 try {
@@ -529,6 +867,16 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 delay(30_000)
             }
         }
+    }
+
+    private suspend fun refreshDirectInboxOnce(token: String) {
+        val data = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
+        setDirectConversations(data?.directConversations.orEmpty())
+    }
+
+    private fun setDirectConversations(conversations: List<WorkflowDirectConversation>) {
+        _directConversations.value = conversations.sortedByDescending { it.updatedAtTimestamp }
+        _unreadDirectMessageCount.value = conversations.sumOf { it.unreadCount.coerceAtLeast(0) }
     }
 
     private suspend fun refreshWorkflowOnce(token: String) {

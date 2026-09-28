@@ -1,9 +1,17 @@
 package com.example.ui.workflow
 
+import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +40,14 @@ import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -51,6 +67,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -68,6 +85,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.auth.HospitalInput
 import com.example.data.auth.PaymentInput
+import com.example.data.auth.WorkflowDirectMessage
 import com.example.data.local.AppointmentEntity
 import com.example.data.local.FacilityEntity
 import com.example.data.local.MessageEntity
@@ -83,6 +101,7 @@ import com.example.ui.theme.ChatMeta
 import com.example.ui.theme.WhatsAppGreen
 import com.example.ui.viewmodel.YawarViewModel
 import java.net.URLEncoder
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -99,7 +118,9 @@ fun PatientCareRequestsScreen(viewModel: YawarViewModel, onOpenMessages: () -> U
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                 items(requests, key = { it.id }) { request ->
-                    PatientRequestCard(request, hospitals, onRoute = { viewModel.routeCareRequest(request.id, it) }, onMessage = {
+                    PatientRequestCard(request, hospitals, onRoute = { viewModel.routeCareRequest(request.id, it) }, onCall = {
+                        viewModel.startCaseVoiceCall(request.id)
+                    }, onMessage = {
                         viewModel.selectCareRequest(request.id)
                         onOpenMessages()
                     })
@@ -133,6 +154,7 @@ fun CallCenterDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> U
                         onRoute = { hospitalId -> viewModel.routeCareRequest(request.id, hospitalId) },
                         doctors = doctors,
                         onAssignDoctor = { doctorId -> viewModel.assignDoctorToRequest(request.id, doctorId) },
+                        onCall = { viewModel.startCaseVoiceCall(request.id) },
                         onMessage = {
                             viewModel.selectCareRequest(request.id)
                             onOpenMessages()
@@ -171,6 +193,7 @@ fun HospitalDashboardScreen(
                             viewModel.selectCareRequest(request.id)
                             onOpenMessages()
                         },
+                        onCall = { viewModel.startCaseVoiceCall(request.id) },
                         onUpload = { uri -> viewModel.uploadHospitalDocument(request.id, context.contentResolver, uri) },
                         onComplete = { viewModel.markHospitalDocumentsComplete(request.id) }
                     )
@@ -185,9 +208,9 @@ private fun PatientRequestCard(
     request: AppointmentEntity,
     hospitals: List<FacilityEntity>,
     onRoute: (String) -> Unit,
+    onCall: () -> Unit,
     onMessage: () -> Unit
 ) {
-    val context = LocalContext.current
     var menuOpen by remember(request.id) { mutableStateOf(false) }
     var selectedHospital by remember(request.id) { mutableStateOf(request.facilityId) }
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -225,7 +248,8 @@ private fun PatientRequestCard(
                     ContactButtons(
                         phone = hospital.contactPhone.substringBefore('/').trim(),
                         whatsappPhone = hospital.whatsappPhone.ifBlank { hospital.contactPhone.substringBefore('/').trim() },
-                        message = "Hello, I am following up on referral ${request.id}."
+                        message = "Hello, I am following up on referral ${request.id}.",
+                        onCall = onCall
                     )
                 }
             } else {
@@ -234,7 +258,7 @@ private fun PatientRequestCard(
             if (request.attachedDocuments.isNotEmpty()) Text("Hospital records: ${request.attachedDocuments.joinToString()}", fontSize = 12.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onMessage) { Icon(Icons.Default.Chat, null); Spacer(Modifier.width(5.dp)); Text("Message care team") }
-                if (request.patientPhone.isNotBlank()) OutlinedButton(onClick = { dial(context, request.patientPhone) }) { Icon(Icons.Default.Call, null); Text("Call") }
+                if (request.patientPhone.isNotBlank()) InAppCallButton("In-app call", onCall)
             }
         }
     }
@@ -248,6 +272,7 @@ private fun StaffRequestCard(
     onRoute: (String) -> Unit,
     doctors: List<com.example.data.auth.WorkflowDoctor> = emptyList(),
     onAssignDoctor: (String) -> Unit = {},
+    onCall: () -> Unit,
     onMessage: () -> Unit
 ) {
     var menuOpen by remember(request.id) { mutableStateOf(false) }
@@ -264,7 +289,7 @@ private fun StaffRequestCard(
             if (request.coordinatorNotes.isNotBlank()) Text(request.coordinatorNotes, fontSize = 12.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (request.patientPhone.isNotBlank()) {
-                    OutlinedButton(onClick = { dial(context, request.patientPhone) }) { Icon(Icons.Default.Call, null); Text("Call patient") }
+                    InAppCallButton("Call patient", onCall)
                     OutlinedButton(onClick = { openWhatsApp(context, request.patientPhone, "Hello ${request.patientName}, Yawar call center is following up on request ${request.id}.") }) {
                         Icon(Icons.Default.Chat, null); Text("WhatsApp")
                     }
@@ -309,6 +334,7 @@ private fun StaffRequestCard(
 private fun HospitalRequestCard(
     request: AppointmentEntity,
     hospitals: List<FacilityEntity>,
+    onCall: () -> Unit,
     onMessage: () -> Unit,
     onUpload: (Uri) -> Unit,
     onComplete: () -> Unit
@@ -335,7 +361,7 @@ private fun HospitalRequestCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (request.patientPhone.isNotBlank()) {
-                    OutlinedButton(onClick = { dial(context, request.patientPhone) }) { Icon(Icons.Default.Call, null); Text("Call patient") }
+                    InAppCallButton("Call patient", onCall)
                     OutlinedButton(onClick = { openWhatsApp(context, request.patientPhone, "Hello ${request.patientName}, this is ${request.facilityName} about referral ${request.id}.") }) {
                         Icon(Icons.Default.Chat, null); Text("WhatsApp")
                     }
@@ -364,6 +390,23 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
     val directConversations by viewModel.directConversations.collectAsState()
     val directMessages by viewModel.directMessages.collectAsState()
     val directMessagesLoading by viewModel.directMessagesLoading.collectAsState()
+    val context = LocalContext.current
+    var caseCallPermissionRequested by remember { mutableStateOf(false) }
+    val caseCallPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && caseCallPermissionRequested && selectedId.isNotBlank()) viewModel.startCaseVoiceCall(selectedId)
+        else if (!granted) viewModel.showSnackbar("Allow microphone access to make an in-app call.")
+        caseCallPermissionRequested = false
+    }
+
+    LaunchedEffect(selectedId) {
+        if (selectedId.isNotBlank()) {
+            viewModel.refreshCaseMessages(selectedId)
+            while (true) {
+                kotlinx.coroutines.delay(5_000)
+                viewModel.refreshCaseMessages(selectedId)
+            }
+        }
+    }
 
     LaunchedEffect(currentRole, selectedId, selectedSupportKey) {
         if (selectedId.isBlank() && selectedSupportKey.isBlank() &&
@@ -381,14 +424,13 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
             }
         }
     }
-    if (selectedSupportKey.isNotBlank() ||
-        (selectedId.isBlank() && currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN))
-    ) {
+    if (selectedDirectId.isNotBlank() || selectedSupportKey.isNotBlank() || selectedId.isBlank()) {
         YhcsDirectMessagesScreen(
             currentRole = currentRole,
             selectedSupportKey = selectedSupportKey,
             selectedDirectId = selectedDirectId,
             conversations = directConversations,
+            requests = requests,
             messages = directMessages,
             loading = directMessagesLoading,
             viewModel = viewModel
@@ -396,11 +438,7 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
         return
     }
 
-    var text by remember { mutableStateOf("") }
     val messageListState = rememberLazyListState()
-    LaunchedEffect(requests, selectedId, selectedSupportKey) {
-        if (selectedSupportKey.isBlank() && requests.none { it.id == selectedId }) viewModel.selectCareRequest(requests.firstOrNull()?.id.orEmpty())
-    }
     val request = requests.firstOrNull { it.id == selectedId }
     val caseMessages = messages.filter { it.conversationId == "case_${request?.id}" }
     LaunchedEffect(caseMessages.size) {
@@ -423,11 +461,13 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
         } else {
             request?.patientPhone.orEmpty()
         }
-        val context = LocalContext.current
         Row(
             Modifier.fillMaxWidth().background(WhatsAppGreen).padding(start = 12.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = viewModel::closeCareRequestMessages) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back to messages", tint = Color.White)
+            }
             Surface(shape = CircleShape, color = Color.White.copy(alpha = 0.16f), modifier = Modifier.size(42.dp)) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(contactName.take(1).uppercase(Locale.getDefault()), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -442,8 +482,17 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
                 )
             }
             if (contactPhone.isNotBlank()) {
-                IconButton(onClick = { dial(context, contactPhone) }) {
-                    Icon(Icons.Default.Call, contentDescription = "Call ${contactName}", tint = Color.White)
+                IconButton(onClick = {
+                    if (request != null) {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            viewModel.startCaseVoiceCall(request.id)
+                        } else {
+                            caseCallPermissionRequested = true
+                            caseCallPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    }
+                }, enabled = request != null) {
+                    Icon(Icons.Default.Call, contentDescription = "Call ${contactName} inside the app", tint = Color.White)
                 }
             }
             if (whatsappPhone.isNotBlank()) {
@@ -494,42 +543,22 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(caseMessages, key = { it.id }) { message ->
-                        MessageBubble(message, outgoing = message.senderRole.equals(currentRole.name, ignoreCase = true))
+                        CaseWorkflowMessageBubble(
+                            message = message,
+                            outgoing = message.senderRole.equals(currentRole.name, ignoreCase = true),
+                            onDownload = { onReady -> viewModel.downloadCaseAttachment(request?.id.orEmpty(), message, onReady) },
+                            onOpenFile = { file, mime -> openDirectMedia(context, file, mime) }
+                        )
                     }
                 }
             }
         }
-        Surface(color = Color.White, shadowElevation = 4.dp) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message") },
-                    maxLines = 4,
-                    shape = RoundedCornerShape(24.dp)
-                )
-                val canSend = text.isNotBlank() && request != null
-                IconButton(
-                    onClick = {
-                        val body = text.trim()
-                        if (body.isNotEmpty() && request != null) {
-                            viewModel.sendMessage(body, "case_${request.id}")
-                            text = ""
-                        }
-                    },
-                    enabled = canSend,
-                    modifier = Modifier.size(48.dp).clip(CircleShape)
-                        .background(if (canSend) WhatsAppGreen else WhatsAppGreen.copy(alpha = 0.45f))
-                ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send message", tint = Color.White, modifier = Modifier.size(21.dp))
-                }
-            }
-        }
+        DirectChatComposer(
+            viewModel = viewModel,
+            enabled = request != null,
+            onSendText = { body -> request?.let { viewModel.sendMessage(body, "case_${it.id}") } },
+            onSendMedia = { media, caption -> request?.let { viewModel.sendCaseAttachment(it.id, media.file, media.mimeType, media.file.name, caption, media.durationSeconds) } }
+        )
     }
 }
 
@@ -539,63 +568,109 @@ private fun YhcsDirectMessagesScreen(
     selectedSupportKey: String,
     selectedDirectId: String,
     conversations: List<com.example.data.auth.WorkflowDirectConversation>,
+    requests: List<com.example.data.local.AppointmentEntity>,
     messages: List<com.example.data.auth.WorkflowDirectMessage>,
     loading: Boolean,
     viewModel: YawarViewModel
 ) {
-    val isStaffInbox = currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN) &&
-        selectedSupportKey.isBlank()
+    val isStaffAccount = currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN)
+    val isInbox = selectedSupportKey.isBlank() && selectedDirectId.isBlank()
     val selectedConversation = conversations.firstOrNull { it.id == selectedDirectId }
     val selectedSupport = YhcsSupportContacts.firstOrNull { it.key == selectedSupportKey }
     val title = when {
         selectedSupport != null -> selectedSupport.label
-        selectedConversation != null -> selectedConversation.participantName.ifBlank { "App user" }
+        selectedConversation != null -> if (isStaffAccount) {
+            selectedConversation.participantName.ifBlank { "App user" }
+        } else {
+            selectedConversation.supportName.ifBlank { selectedConversation.supportKey.replace("YHCS", "YHCS ") }
+        }
         else -> "YHCS direct messages"
     }
-    val phone = selectedSupport?.phone ?: selectedConversation?.participantPhone.orEmpty()
-    var messageText by remember(selectedDirectId, selectedSupportKey) { mutableStateOf("") }
+    val phone = selectedSupport?.phone ?: if (isStaffAccount) {
+        selectedConversation?.participantPhone.orEmpty()
+    } else {
+        YhcsSupportContacts.firstOrNull { it.key == selectedConversation?.supportKey }?.phone.orEmpty()
+    }
+    val activeVoiceCall by viewModel.voiceCall.collectAsState()
     val messageListState = rememberLazyListState()
     val context = LocalContext.current
+    var requestingCallPermission by remember { mutableStateOf(false) }
+    val callPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && requestingCallPermission) viewModel.startDirectVoiceCall()
+        else if (!granted) viewModel.showSnackbar("Allow microphone access to make an in-app call.")
+        requestingCallPermission = false
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) messageListState.animateScrollToItem(messages.lastIndex)
     }
 
-    if (isStaffInbox && selectedDirectId.isBlank()) {
+    if (isInbox) {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Row(
                 Modifier.fillMaxWidth().background(WhatsAppGreen).padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("YHCS direct messages", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text("Private conversations assigned to your account", color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp)
+                    Text(if (isStaffAccount) "YHCS direct messages" else "Messages", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        if (isStaffAccount) "Private conversations assigned to your account" else "YHCS desks and care request conversations",
+                        color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp
+                    )
                 }
                 IconButton(onClick = viewModel::refreshDirectInbox) {
                     Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
                 }
             }
-            if (conversations.isEmpty()) {
-                EmptyWorkflowState("No direct messages yet", "Patient, hospital, and doctor messages to your YHCS profile will appear here.")
-            } else {
-                LazyColumn(
-                    Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(conversations, key = { "direct_${it.id}" }) { conversation ->
-                        Card(
-                            Modifier.fillMaxWidth().clickable { viewModel.selectDirectConversation(conversation.id) },
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(conversation.participantName.ifBlank { "App user" }, fontWeight = FontWeight.Bold)
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (!isStaffAccount) item(key = "yhcs_contacts") {
+                    YhcsContactCard(onMessage = viewModel::openYhcsConversation)
+                }
+                if (conversations.isEmpty() && requests.isEmpty()) item(key = "empty_messages") {
+                    EmptyWorkflowState("No conversations yet", "Choose a YHCS desk or create a care request to start a private conversation.")
+                }
+                items(conversations, key = { "direct_${it.id}" }) { conversation ->
+                    Card(
+                        Modifier.fillMaxWidth().clickable { viewModel.selectDirectConversation(conversation.id) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    if (isStaffAccount) conversation.participantName.ifBlank { "App user" }
+                                    else conversation.supportName.ifBlank { conversation.supportKey.replace("YHCS", "YHCS ") },
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(conversation.supportKey.replace("YHCS", "YHCS "), color = WhatsAppGreen, fontSize = 12.sp)
+                                    if (conversation.unreadCount > 0) Surface(shape = CircleShape, color = WhatsAppGreen) {
+                                        Text(conversation.unreadCount.coerceAtMost(99).toString(), color = Color.White, fontSize = 11.sp,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
+                                    }
                                 }
-                                if (conversation.participantPhone.isNotBlank()) Text(conversation.participantPhone, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(conversation.lastMessage.ifBlank { "Start the conversation" }, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                             }
+                            val displayPhone = if (isStaffAccount) conversation.participantPhone else ""
+                            if (displayPhone.isNotBlank()) Text(displayPhone, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(conversation.lastMessage.ifBlank { "Start the conversation" }, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        }
+                    }
+                }
+                if (requests.isNotEmpty()) item(key = "care_request_heading") {
+                    Text("Care request conversations", Modifier.padding(top = 8.dp), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+                items(requests, key = { "case_${it.id}" }) { request ->
+                    Card(
+                        Modifier.fillMaxWidth().clickable { viewModel.selectCareRequest(request.id) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(request.patientName.ifBlank { request.facilityName.ifBlank { "Care team" } }, fontWeight = FontWeight.Bold)
+                            Text("${request.id} · ${request.status.labelEn}", fontSize = 12.sp, color = WhatsAppGreen)
+                            if (request.facilityName.isNotBlank()) Text(request.facilityName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -609,7 +684,7 @@ private fun YhcsDirectMessagesScreen(
             Modifier.fillMaxWidth().background(WhatsAppGreen).padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN)) {
+            if (selectedDirectId.isNotBlank() || selectedSupportKey.isNotBlank()) {
                 IconButton(onClick = viewModel::closeDirectConversation) {
                     Icon(Icons.Default.ArrowBack, contentDescription = "Back to inbox", tint = Color.White)
                 }
@@ -625,20 +700,30 @@ private fun YhcsDirectMessagesScreen(
                 Text(
                     when {
                         selectedSupport != null -> "Private message to ${selectedSupport.label} · ${selectedSupport.phone}"
-                        selectedConversation != null -> selectedConversation.supportKey.replace("YHCS", "YHCS ") + " · " + (phone.ifBlank { "Secure conversation" })
-                        else -> "Secure conversation"
+                        selectedConversation != null -> selectedConversation.supportKey.replace("YHCS", "YHCS ") + " · " + (phone.ifBlank { "Private conversation" })
+                        else -> "Private conversation"
                     },
                     color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp, maxLines = 1
                 )
             }
-            if (phone.isNotBlank()) IconButton(onClick = { dial(context, phone) }) {
-                Icon(Icons.Default.Call, contentDescription = "Call $title", tint = Color.White)
+            if (phone.isNotBlank()) IconButton(
+                onClick = {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        viewModel.startDirectVoiceCall()
+                    } else {
+                        requestingCallPermission = true
+                        callPermission.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                enabled = selectedDirectId.isNotBlank() && activeVoiceCall == null
+            ) {
+                Icon(Icons.Default.Call, contentDescription = "Call $title in the app", tint = Color.White)
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth().background(ChatCanvas).chatDoodleWallpaper(WhatsAppGreen.copy(alpha = 0.55f))) {
             if (messages.isEmpty()) {
                 Text(
-                    if (loading) "Opening secure conversation…" else "Send a message to start this conversation.",
+                    if (loading) "Opening conversation…" else "Send a message to start this conversation.",
                     Modifier.align(Alignment.Center).padding(24.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
@@ -651,50 +736,322 @@ private fun YhcsDirectMessagesScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(messages, key = { it.id }) { message ->
-                        MessageBubble(
-                            MessageEntity(
-                                id = message.id,
-                                senderRole = message.senderRole,
-                                senderName = message.senderName,
-                                content = message.content,
-                                timestamp = message.timestamp,
-                                conversationId = "direct_$selectedDirectId",
-                                deliveryStatus = "SENT"
-                            ),
-                            outgoing = message.senderRole.equals(currentRole.name, ignoreCase = true)
+                        DirectWorkflowMessageBubble(
+                            message = message,
+                            outgoing = message.senderRole.equals(currentRole.name, ignoreCase = true),
+                            onDownload = { onReady -> viewModel.downloadDirectAttachment(message, onReady) },
+                            onOpenFile = { file, mime -> openDirectMedia(context, file, mime) }
                         )
                     }
                 }
             }
         }
-        Surface(color = Color.White, shadowElevation = 4.dp) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+        DirectChatComposer(
+            viewModel = viewModel,
+            enabled = selectedDirectId.isNotBlank() && !loading,
+            onSendText = viewModel::sendDirectMessage,
+            onSendMedia = { media, caption -> viewModel.sendDirectAttachment(media.file, media.mimeType, media.file.name, caption, media.durationSeconds) }
+        )
+    }
+}
+
+@Composable
+fun VoiceCallMonitor(viewModel: YawarViewModel) {
+    val context = LocalContext.current
+    val incomingCalls by viewModel.incomingVoiceCalls.collectAsState()
+    val activeVoiceCall by viewModel.voiceCall.collectAsState()
+    var requestedAnswerCallId by remember { mutableStateOf("") }
+    val callPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val incoming = incomingCalls.firstOrNull { it.id == requestedAnswerCallId }
+        if (granted && incoming != null) viewModel.acceptIncomingVoiceCall(incoming)
+        else if (!granted) viewModel.showSnackbar("Allow microphone access to answer an in-app call.")
+        requestedAnswerCallId = ""
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.refreshIncomingVoiceCalls()
+            kotlinx.coroutines.delay(2_500)
+        }
+    }
+    if (activeVoiceCall != null) {
+        AlertDialog(
+            onDismissRequest = viewModel::endVoiceCall,
+            title = { Text(activeVoiceCall?.peerName ?: "In-app call") },
+            text = { Text("${activeVoiceCall?.status ?: "Connecting…"}\nKeep the app open while you call.") },
+            confirmButton = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = viewModel::toggleVoiceCallMute) {
+                        Icon(if (activeVoiceCall?.muted == true) Icons.Default.MicOff else Icons.Default.Mic, null)
+                        Text(if (activeVoiceCall?.muted == true) "Unmute" else "Mute")
+                    }
+                    TextButton(onClick = viewModel::toggleVoiceCallSpeaker) {
+                        Icon(Icons.Default.VolumeUp, null)
+                        Text(if (activeVoiceCall?.speakerOn == true) "Earpiece" else "Speaker")
+                    }
+                    Button(onClick = viewModel::endVoiceCall) {
+                        Icon(Icons.Default.CallEnd, null)
+                        Text("End")
+                    }
+                }
+            }
+        )
+    } else {
+        val incoming = incomingCalls.firstOrNull()
+        if (incoming != null) AlertDialog(
+            onDismissRequest = { viewModel.rejectIncomingVoiceCall(incoming) },
+            title = { Text("Incoming internet call") },
+            text = { Text("${incoming.peerName} is calling. Keep the app open to answer.") },
+            confirmButton = {
+                Button(onClick = {
+                    requestedAnswerCallId = incoming.id
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        viewModel.acceptIncomingVoiceCall(incoming)
+                    } else callPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }) { Text("Answer") }
+            },
+            dismissButton = { TextButton(onClick = { viewModel.rejectIncomingVoiceCall(incoming) }) { Text("Decline") } }
+        )
+    }
+}
+
+private data class PendingDirectMedia(val file: File, val mimeType: String, val durationSeconds: Int = 0)
+
+@Composable
+private fun DirectChatComposer(
+    viewModel: YawarViewModel,
+    enabled: Boolean,
+    onSendText: (String) -> Unit,
+    onSendMedia: (PendingDirectMedia, String) -> Unit
+) {
+    val context = LocalContext.current
+    var messageText by remember { mutableStateOf("") }
+    var pendingMedia by remember { mutableStateOf<PendingDirectMedia?>(null) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<File?>(null) }
+    var recordingStartedAt by remember { mutableStateOf(0L) }
+
+    fun beginRecording() {
+        runCatching {
+            val directory = File(context.cacheDir, "direct-media").apply { mkdirs() }
+            val output = File(directory, "voice_${System.currentTimeMillis()}.m4a")
+            @Suppress("DEPRECATION")
+            val mediaRecorder = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(context) else MediaRecorder()
+            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            mediaRecorder.setOutputFile(output.absolutePath)
+            mediaRecorder.prepare()
+            mediaRecorder.start()
+            recorder = mediaRecorder
+            recordingFile = output
+            recordingStartedAt = System.currentTimeMillis()
+        }.onFailure { viewModel.showSnackbar("Could not start voice recording: ${it.message ?: "microphone unavailable"}") }
+    }
+
+    val microphonePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) beginRecording() else viewModel.showSnackbar("Allow microphone access to record a voice message.")
+    }
+    val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                val safeExtension = when (mime) {
+                    "image/jpeg" -> ".jpg"
+                    "image/png" -> ".png"
+                    "image/webp" -> ".webp"
+                    "application/pdf" -> ".pdf"
+                    else -> throw IllegalArgumentException("Choose a JPG, PNG, WebP, or PDF file.")
+                }
+                val directory = File(context.cacheDir, "direct-media").apply { mkdirs() }
+                val output = File(directory, "attachment_${System.currentTimeMillis()}$safeExtension")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    output.outputStream().use { outputStream -> input.copyTo(outputStream) }
+                }
+                    ?: throw IllegalArgumentException("The selected file could not be read.")
+                if (output.length() > 8L * 1024 * 1024) throw IllegalArgumentException("Attachments must be smaller than 8 MB.")
+                pendingMedia = PendingDirectMedia(output, mime)
+            }.onFailure { viewModel.showSnackbar(it.message ?: "Could not open that file.") }
+        }
+    }
+
+    DisposableEffect(recorder) {
+        onDispose {
+            recorder?.let { active -> runCatching { active.stop() }; runCatching { active.release() } }
+        }
+    }
+    Surface(color = Color.White, shadowElevation = 4.dp) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            pendingMedia?.let { media ->
+                Text(
+                    (if (media.durationSeconds > 0) "Voice note · ${media.durationSeconds}s" else "Attachment ready") + " · tap × to remove",
+                    Modifier.padding(start = 10.dp), color = WhatsAppGreen, fontSize = 12.sp
+                )
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(onClick = { attachmentPicker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "application/pdf")) }, enabled = enabled && recorder == null) {
+                    Icon(Icons.Default.AttachFile, contentDescription = "Attach a photo or PDF", tint = WhatsAppGreen)
+                }
                 OutlinedTextField(
                     value = messageText,
                     onValueChange = { messageText = it },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Message") },
                     maxLines = 4,
-                    shape = RoundedCornerShape(24.dp)
+                    shape = RoundedCornerShape(24.dp),
+                    enabled = enabled && recorder == null
                 )
-                val canSend = messageText.isNotBlank() && selectedDirectId.isNotBlank() && !loading
                 IconButton(
                     onClick = {
-                        viewModel.sendDirectMessage(messageText)
+                        if (recorder != null) {
+                            val seconds = ((System.currentTimeMillis() - recordingStartedAt) / 1000).toInt().coerceIn(1, 600)
+                            val active = recorder
+                            val output = recordingFile
+                            recorder = null
+                            recordingFile = null
+                            runCatching { active?.stop() }.onFailure {
+                                viewModel.showSnackbar("The voice message was too short to save.")
+                                return@IconButton
+                            }
+                            runCatching { active?.release() }
+                            if (output != null && output.isFile && output.length() > 0L) {
+                                pendingMedia = PendingDirectMedia(output, "audio/mp4", seconds)
+                            } else {
+                                viewModel.showSnackbar("The voice message could not be saved.")
+                            }
+                        } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            beginRecording()
+                        } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
+                    },
+                    enabled = enabled
+                ) {
+                    Icon(if (recorder == null) Icons.Default.Mic else Icons.Default.Stop,
+                        contentDescription = if (recorder == null) "Record voice message" else "Stop recording",
+                        tint = if (recorder == null) WhatsAppGreen else MaterialTheme.colorScheme.error)
+                }
+                val canSend = enabled && (messageText.isNotBlank() || pendingMedia != null)
+                IconButton(
+                    onClick = {
+                        val media = pendingMedia
+                        if (media != null) onSendMedia(media, messageText)
+                        else onSendText(messageText)
                         messageText = ""
+                        pendingMedia = null
                     },
                     enabled = canSend,
-                    modifier = Modifier.size(48.dp).clip(CircleShape)
+                    modifier = Modifier.size(46.dp).clip(CircleShape)
                         .background(if (canSend) WhatsAppGreen else WhatsAppGreen.copy(alpha = 0.45f))
                 ) {
                     Icon(Icons.Default.Send, contentDescription = "Send message", tint = Color.White, modifier = Modifier.size(21.dp))
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DirectWorkflowMessageBubble(
+    message: WorkflowDirectMessage,
+    outgoing: Boolean,
+    onDownload: (((File, String) -> Unit) -> Unit),
+    onOpenFile: (File, String) -> Unit
+) {
+    var localFile by remember(message.id) { mutableStateOf<File?>(null) }
+    val shownText = when {
+        message.content.isNotBlank() -> message.content
+        message.messageType == "VOICE" -> "Voice message"
+        message.messageType == "ATTACHMENT" -> message.attachmentName.ifBlank { "Attachment" }
+        else -> ""
+    }
+    Column(horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
+        MessageBubble(
+            MessageEntity(
+                id = message.id, senderRole = message.senderRole, senderName = message.senderName,
+                content = shownText, timestamp = message.timestamp, conversationId = "direct", deliveryStatus = "SENT"
+            ),
+            outgoing = outgoing
+        )
+        if (message.messageType == "VOICE" || message.messageType == "ATTACHMENT") {
+            if (message.messageType == "VOICE" && localFile != null) {
+                VoiceNotePlayer(localFile!!, message.voiceDurationSec)
+            } else {
+                TextButton(onClick = {
+                    onDownload { file, mime ->
+                        localFile = file
+                        if (message.messageType == "ATTACHMENT") onOpenFile(file, mime)
+                    }
+                }) {
+                    Icon(if (message.messageType == "VOICE") Icons.Default.PlayArrow else Icons.Default.UploadFile, null)
+                    Text(if (message.messageType == "VOICE") "Play voice message" else "Open ${message.attachmentName.ifBlank { "attachment" }}")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaseWorkflowMessageBubble(
+    message: MessageEntity,
+    outgoing: Boolean,
+    onDownload: (((File, String) -> Unit) -> Unit),
+    onOpenFile: (File, String) -> Unit
+) {
+    var localFile by remember(message.id) { mutableStateOf<File?>(null) }
+    val displayText = when {
+        message.content.isNotBlank() -> message.content
+        message.messageType == "VOICE" -> "Voice message"
+        message.messageType == "ATTACHMENT" -> message.attachmentName.ifBlank { "Attachment" }
+        else -> ""
+    }
+    Column(horizontalAlignment = if (outgoing) Alignment.End else Alignment.Start) {
+        MessageBubble(message.copy(content = displayText), outgoing)
+        if (message.messageType == "VOICE" || message.messageType == "ATTACHMENT") {
+            if (message.messageType == "VOICE" && localFile != null) VoiceNotePlayer(localFile!!, message.voiceDurationSec)
+            else TextButton(onClick = {
+                onDownload { file, mime ->
+                    localFile = file
+                    if (message.messageType == "ATTACHMENT") onOpenFile(file, mime)
+                }
+            }) {
+                Icon(if (message.messageType == "VOICE") Icons.Default.PlayArrow else Icons.Default.UploadFile, null)
+                Text(if (message.messageType == "VOICE") "Play voice message" else "Open ${message.attachmentName.ifBlank { "attachment" }}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun VoiceNotePlayer(file: File, durationSeconds: Int) {
+    var playing by remember(file) { mutableStateOf(false) }
+    val player = remember(file) { MediaPlayer() }
+    DisposableEffect(player) {
+        onDispose { runCatching { player.stop() }; player.release() }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = {
+            if (playing) {
+                runCatching { player.pause() }
+                playing = false
+            } else {
+                runCatching {
+                    player.reset()
+                    player.setDataSource(file.absolutePath)
+                    player.setOnPreparedListener { it.start(); playing = true }
+                    player.setOnCompletionListener { playing = false }
+                    player.prepareAsync()
+                }
+            }
+        }) {
+            Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = if (playing) "Pause" else "Play voice message", tint = WhatsAppGreen)
+        }
+        Text("Voice message · ${durationSeconds}s", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun openDirectMedia(context: Context, file: File, mimeType: String) {
+    runCatching {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+        val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mimeType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        context.startActivity(Intent.createChooser(intent, "Open attachment"))
     }
 }
 
@@ -817,6 +1174,7 @@ fun ManagerDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> Unit
                             onRoute = { viewModel.routeCareRequest(request.id, it) },
                             doctors = doctors,
                             onAssignDoctor = { viewModel.assignDoctorToRequest(request.id, it) },
+                            onCall = { viewModel.startCaseVoiceCall(request.id) },
                             onMessage = { viewModel.selectCareRequest(request.id); onOpenMessages() }
                         )
                     }
@@ -1010,22 +1368,38 @@ private fun EmptyWorkflowState(title: String, text: String) {
 }
 
 @Composable
-private fun ContactButtons(phone: String, whatsappPhone: String, message: String) {
+private fun ContactButtons(phone: String, whatsappPhone: String, message: String, onCall: () -> Unit) {
     val context = LocalContext.current
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { dial(context, phone) }) { Icon(Icons.Default.Call, null); Text("Call hospital") }
+        InAppCallButton("In-app call", onCall)
         OutlinedButton(onClick = { openWhatsApp(context, whatsappPhone, message) }) { Icon(Icons.Default.Chat, null); Text("WhatsApp") }
+    }
+}
+
+@Composable
+private fun InAppCallButton(label: String, onCall: () -> Unit) {
+    val context = LocalContext.current
+    var waitingForPermission by remember { mutableStateOf(false) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && waitingForPermission) onCall()
+        waitingForPermission = false
+    }
+    OutlinedButton(onClick = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) onCall()
+        else {
+            waitingForPermission = true
+            permission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }) {
+        Icon(Icons.Default.Call, null)
+        Spacer(Modifier.width(5.dp))
+        Text(label)
     }
 }
 
 @Composable
 private fun FormField(label: String, value: String, onValueChange: (String) -> Unit) {
     OutlinedTextField(value, onValueChange, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = label != "Address")
-}
-
-private fun dial(context: android.content.Context, phone: String) {
-    val number = phone.substringBefore('/').trim()
-    if (number.isNotBlank()) runCatching { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(number)}"))) }
 }
 
 private fun openWhatsApp(context: android.content.Context, phone: String, message: String) {

@@ -1,7 +1,5 @@
 package com.example.ui.common
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,21 +11,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,7 +41,6 @@ fun YhcsContactCard(
     onMessage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -58,7 +52,7 @@ fun YhcsContactCard(
         ) {
             Text("YHCS contact center", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             Text(
-                "Call either desk or send a private in-app message.",
+                "Open either desk in the app to message or place an internet call.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp
             )
@@ -75,15 +69,6 @@ fun YhcsContactCard(
                         Text(contact.label, fontWeight = FontWeight.Bold, color = YawarBlue)
                         Text(contact.phone, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                     }
-                    OutlinedButton(onClick = {
-                        val number = contact.phone.filter { it.isDigit() || it == '+' }
-                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")))
-                    }) {
-                        Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.width(5.dp))
-                        Text("Call")
-                    }
-                    Spacer(Modifier.width(6.dp))
                     Button(onClick = { onMessage(contact.key) }) {
                         Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(17.dp))
                         Spacer(Modifier.width(5.dp))
