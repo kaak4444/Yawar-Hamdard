@@ -65,6 +65,7 @@ import com.example.ui.common.AppointmentStatusBadge
 import com.example.ui.common.YawarBadgeTone
 import com.example.ui.common.YawarEmptyState
 import com.example.ui.common.YawarTonalBadge
+import com.example.ui.common.YhcsContactCard
 import com.example.ui.theme.BorderColor
 import com.example.ui.theme.ClinicalGreen
 import com.example.ui.theme.DeepGreen
@@ -82,6 +83,7 @@ import com.example.ui.viewmodel.YawarViewModel
 @Composable
 fun DoctorDashboardScreen(
     viewModel: YawarViewModel,
+    onOpenYhcsMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val appointments by viewModel.appointments.collectAsState()
@@ -159,6 +161,11 @@ fun DoctorDashboardScreen(
                 }
             }
         }
+
+        YhcsContactCard(
+            onMessage = onOpenYhcsMessage,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        )
 
         // Tab Row: Pending Requests (X) | Confirmed Visits (Y)
         TabRow(

@@ -24,6 +24,10 @@ import com.example.data.auth.ReviewRequest
 import com.example.data.auth.RouteRequest
 import com.example.data.auth.SignupRequest
 import com.example.data.auth.SendCaseMessage
+import com.example.data.auth.SendDirectMessage
+import com.example.data.auth.StartDirectConversation
+import com.example.data.auth.WorkflowDirectConversation
+import com.example.data.auth.WorkflowDirectMessage
 import com.example.data.auth.WorkflowDoctor
 import com.example.data.auth.WorkflowHospital
 import com.example.data.auth.WorkflowMessage
@@ -365,10 +369,135 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedCareRequestId = MutableStateFlow("")
     val selectedCareRequestId: StateFlow<String> = _selectedCareRequestId.asStateFlow()
 
+    private val _selectedSupportKey = MutableStateFlow("")
+    val selectedSupportKey: StateFlow<String> = _selectedSupportKey.asStateFlow()
+    private val _selectedDirectConversationId = MutableStateFlow("")
+    val selectedDirectConversationId: StateFlow<String> = _selectedDirectConversationId.asStateFlow()
+    private val _directConversations = MutableStateFlow<List<WorkflowDirectConversation>>(emptyList())
+    val directConversations: StateFlow<List<WorkflowDirectConversation>> = _directConversations.asStateFlow()
+    private val _directMessages = MutableStateFlow<List<WorkflowDirectMessage>>(emptyList())
+    val directMessages: StateFlow<List<WorkflowDirectMessage>> = _directMessages.asStateFlow()
+    private val _directMessagesLoading = MutableStateFlow(false)
+    val directMessagesLoading: StateFlow<Boolean> = _directMessagesLoading.asStateFlow()
+
     private val _workflowRefreshing = MutableStateFlow(false)
     val workflowRefreshing: StateFlow<Boolean> = _workflowRefreshing.asStateFlow()
 
-    fun selectCareRequest(id: String) { _selectedCareRequestId.value = id }
+    fun selectCareRequest(id: String) {
+        _selectedCareRequestId.value = id
+        _selectedSupportKey.value = ""
+        _selectedDirectConversationId.value = ""
+    }
+
+    fun openYhcsConversation(supportKey: String) {
+        if (supportKey !in setOf("YHCS1", "YHCS2")) return showSnackbar("Choose a valid YHCS contact.")
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in to message the YHCS contact center.")
+        _selectedCareRequestId.value = ""
+        _selectedSupportKey.value = supportKey
+        _selectedDirectConversationId.value = ""
+        _directMessages.value = emptyList()
+        viewModelScope.launch {
+            _directMessagesLoading.value = true
+            try {
+                val data = workflowApi.startDirectConversation(
+                    "Bearer $token",
+                    StartDirectConversation(supportKey)
+                ).requireWorkflowSuccess().data
+                    ?: throw IllegalStateException("The message service returned no conversation.")
+                val conversation = data.directConversation
+                    ?: throw IllegalStateException("The YHCS contact could not be opened.")
+                _selectedDirectConversationId.value = conversation.id
+                _directConversations.value = (_directConversations.value.filterNot { it.id == conversation.id } + conversation)
+                    .sortedByDescending { it.updatedAtTimestamp }
+                _directMessages.value = data.directMessages
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "Could not open the YHCS conversation.")
+            } finally {
+                _directMessagesLoading.value = false
+            }
+        }
+    }
+
+    fun openDirectInbox() {
+        _selectedCareRequestId.value = ""
+        _selectedSupportKey.value = ""
+        _selectedDirectConversationId.value = ""
+        _directMessages.value = emptyList()
+        refreshDirectInbox()
+    }
+
+    fun refreshDirectInbox() {
+        val token = authTokenStore.read() ?: return
+        viewModelScope.launch {
+            try {
+                val data = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
+                _directConversations.value = data?.directConversations.orEmpty()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "Could not load YHCS messages.")
+            }
+        }
+    }
+
+    fun selectDirectConversation(conversationId: String) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to open this message.")
+        _selectedCareRequestId.value = ""
+        _selectedSupportKey.value = ""
+        _selectedDirectConversationId.value = conversationId
+        viewModelScope.launch { loadDirectConversation(token, conversationId) }
+    }
+
+    fun refreshDirectConversation() {
+        val token = authTokenStore.read() ?: return
+        val conversationId = _selectedDirectConversationId.value
+        if (conversationId.isBlank()) return
+        viewModelScope.launch { loadDirectConversation(token, conversationId, showLoading = false) }
+    }
+
+    fun closeDirectConversation() {
+        _selectedDirectConversationId.value = ""
+        _directMessages.value = emptyList()
+        refreshDirectInbox()
+    }
+
+    private suspend fun loadDirectConversation(token: String, conversationId: String, showLoading: Boolean = true) {
+        if (showLoading) _directMessagesLoading.value = true
+        try {
+            val data = workflowApi.directConversation("Bearer $token", conversationId).requireWorkflowSuccess().data
+                ?: throw IllegalStateException("The message service returned no conversation.")
+            data.directConversation?.let { conversation ->
+                _directConversations.value = (_directConversations.value.filterNot { it.id == conversation.id } + conversation)
+                    .sortedByDescending { it.updatedAtTimestamp }
+            }
+            _directMessages.value = data.directMessages
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            showSnackbar(error.message ?: "Could not load this conversation.")
+        } finally {
+            if (showLoading) _directMessagesLoading.value = false
+        }
+    }
+
+    fun sendDirectMessage(content: String) {
+        val body = content.trim()
+        if (body.isEmpty()) return
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send messages.")
+        val conversationId = _selectedDirectConversationId.value
+        if (conversationId.isBlank()) return showSnackbar("Open a YHCS conversation first.")
+        viewModelScope.launch {
+            try {
+                workflowApi.sendDirectMessage("Bearer $token", conversationId, SendDirectMessage(body))
+                    .requireWorkflowSuccess()
+                loadDirectConversation(token, conversationId)
+                val inbox = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
+                _directConversations.value = inbox?.directConversations.orEmpty()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                showSnackbar(error.message ?: "The message could not be sent.")
+            }
+        }
+    }
 
     fun refreshWorkflow() {
         val token = authTokenStore.read() ?: return

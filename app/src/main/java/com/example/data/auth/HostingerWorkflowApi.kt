@@ -33,7 +33,28 @@ internal data class WorkflowDashboard(
     val hospitals: List<WorkflowHospital> = emptyList(),
     val doctors: List<WorkflowDoctor> = emptyList(),
     val payments: List<WorkflowPayment> = emptyList(),
-    val profile: WorkflowProfile? = null
+    val profile: WorkflowProfile? = null,
+    val directConversation: WorkflowDirectConversation? = null,
+    val directConversations: List<WorkflowDirectConversation> = emptyList(),
+    val directMessages: List<WorkflowDirectMessage> = emptyList()
+)
+
+internal data class WorkflowDirectConversation(
+    val id: String,
+    val supportKey: String = "",
+    val supportName: String = "",
+    val participantName: String = "",
+    val participantPhone: String = "",
+    val lastMessage: String = "",
+    val updatedAtTimestamp: Long = 0L
+)
+
+internal data class WorkflowDirectMessage(
+    val id: String,
+    val senderRole: String = "",
+    val senderName: String = "",
+    val content: String = "",
+    val timestamp: Long = 0L
 )
 
 internal data class WorkflowRequest(
@@ -161,6 +182,8 @@ internal data class DoctorRequestUpdate(val status: String, val notes: String = 
 internal data class RouteRequest(val hospitalId: Long)
 internal data class AssignDoctorRequest(val doctorId: Long)
 internal data class SendCaseMessage(val requestId: String, val content: String)
+internal data class StartDirectConversation(val supportKey: String)
+internal data class SendDirectMessage(val content: String)
 internal data class HospitalInput(
     val name: String,
     val email: String = "",
@@ -211,6 +234,25 @@ internal interface HostingerWorkflowApi {
 
     @POST("messages")
     suspend fun sendMessage(@Header("Authorization") authorization: String, @Body body: SendCaseMessage): Response<WorkflowApiResponse>
+
+    @GET("direct-conversations")
+    suspend fun directConversations(@Header("Authorization") authorization: String): Response<WorkflowApiResponse>
+
+    @POST("direct-conversations")
+    suspend fun startDirectConversation(@Header("Authorization") authorization: String, @Body body: StartDirectConversation): Response<WorkflowApiResponse>
+
+    @GET("direct-conversations/{conversationId}")
+    suspend fun directConversation(
+        @Header("Authorization") authorization: String,
+        @Path("conversationId") conversationId: String
+    ): Response<WorkflowApiResponse>
+
+    @POST("direct-conversations/{conversationId}/messages")
+    suspend fun sendDirectMessage(
+        @Header("Authorization") authorization: String,
+        @Path("conversationId") conversationId: String,
+        @Body body: SendDirectMessage
+    ): Response<WorkflowApiResponse>
 
     @Multipart
     @POST("documents")

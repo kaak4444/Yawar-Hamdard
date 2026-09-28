@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -71,6 +73,8 @@ import com.example.data.local.FacilityEntity
 import com.example.data.local.MessageEntity
 import com.example.data.model.AppointmentStatus
 import com.example.ui.common.HospitalLogoBadge
+import com.example.ui.common.YhcsContactCard
+import com.example.ui.common.YhcsSupportContacts
 import com.example.ui.common.chatDoodleWallpaper
 import com.example.ui.theme.ChatBubbleIn
 import com.example.ui.theme.ChatBubbleOut
@@ -113,6 +117,9 @@ fun CallCenterDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> U
     val refreshing by viewModel.workflowRefreshing.collectAsState()
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         ScreenHeading("Call-center case queue", "Review patient requests, speak with patients, and route approved referrals.", refreshing, viewModel::refreshWorkflow)
+        OutlinedButton(onClick = { viewModel.openDirectInbox(); onOpenMessages() }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+            Icon(Icons.Default.Chat, null); Spacer(Modifier.width(6.dp)); Text("YHCS direct messages")
+        }
         QueueMetrics(requests)
         if (requests.isEmpty()) {
             EmptyWorkflowState("The queue is clear", "New patient care requests will appear here after the shared care service is connected.")
@@ -138,13 +145,18 @@ fun CallCenterDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> U
 }
 
 @Composable
-fun HospitalDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> Unit = {}) {
+fun HospitalDashboardScreen(
+    viewModel: YawarViewModel,
+    onOpenMessages: () -> Unit = {},
+    onOpenYhcsMessage: (String) -> Unit = {}
+) {
     val requests by viewModel.appointments.collectAsState()
     val hospitals by viewModel.facilities.collectAsState()
     val refreshing by viewModel.workflowRefreshing.collectAsState()
     val context = LocalContext.current
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         ScreenHeading("Hospital referrals", "Review referrals sent to your hospital, message patients, and upload their records.", refreshing, viewModel::refreshWorkflow)
+        YhcsContactCard(onMessage = onOpenYhcsMessage, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
         val pendingDocs = requests.count { it.status == AppointmentStatus.AWAITING_PROVIDER && it.attachedDocuments.isEmpty() }
         QueueMetrics(requests, pendingDocs)
         if (requests.isEmpty()) {
@@ -347,10 +359,47 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
     val messages by viewModel.messages.collectAsState()
     val selectedId by viewModel.selectedCareRequestId.collectAsState()
     val currentRole by viewModel.currentRole.collectAsState()
+    val selectedSupportKey by viewModel.selectedSupportKey.collectAsState()
+    val selectedDirectId by viewModel.selectedDirectConversationId.collectAsState()
+    val directConversations by viewModel.directConversations.collectAsState()
+    val directMessages by viewModel.directMessages.collectAsState()
+    val directMessagesLoading by viewModel.directMessagesLoading.collectAsState()
+
+    LaunchedEffect(currentRole, selectedId, selectedSupportKey) {
+        if (selectedId.isBlank() && selectedSupportKey.isBlank() &&
+            currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN)
+        ) viewModel.refreshDirectInbox()
+    }
+    LaunchedEffect(currentRole, selectedSupportKey, selectedDirectId, selectedId) {
+        val isSupportInbox = selectedId.isBlank() && selectedSupportKey.isBlank() &&
+            currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN)
+        val isDirectChat = selectedSupportKey.isNotBlank() || selectedDirectId.isNotBlank()
+        if (isSupportInbox || isDirectChat) {
+            while (true) {
+                kotlinx.coroutines.delay(10_000)
+                if (isSupportInbox) viewModel.refreshDirectInbox() else viewModel.refreshDirectConversation()
+            }
+        }
+    }
+    if (selectedSupportKey.isNotBlank() ||
+        (selectedId.isBlank() && currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN))
+    ) {
+        YhcsDirectMessagesScreen(
+            currentRole = currentRole,
+            selectedSupportKey = selectedSupportKey,
+            selectedDirectId = selectedDirectId,
+            conversations = directConversations,
+            messages = directMessages,
+            loading = directMessagesLoading,
+            viewModel = viewModel
+        )
+        return
+    }
+
     var text by remember { mutableStateOf("") }
     val messageListState = rememberLazyListState()
-    LaunchedEffect(requests, selectedId) {
-        if (requests.none { it.id == selectedId }) viewModel.selectCareRequest(requests.firstOrNull()?.id.orEmpty())
+    LaunchedEffect(requests, selectedId, selectedSupportKey) {
+        if (selectedSupportKey.isBlank() && requests.none { it.id == selectedId }) viewModel.selectCareRequest(requests.firstOrNull()?.id.orEmpty())
     }
     val request = requests.firstOrNull { it.id == selectedId }
     val caseMessages = messages.filter { it.conversationId == "case_${request?.id}" }
@@ -485,6 +534,171 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
 }
 
 @Composable
+private fun YhcsDirectMessagesScreen(
+    currentRole: com.example.data.model.UserRole,
+    selectedSupportKey: String,
+    selectedDirectId: String,
+    conversations: List<com.example.data.auth.WorkflowDirectConversation>,
+    messages: List<com.example.data.auth.WorkflowDirectMessage>,
+    loading: Boolean,
+    viewModel: YawarViewModel
+) {
+    val isStaffInbox = currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN) &&
+        selectedSupportKey.isBlank()
+    val selectedConversation = conversations.firstOrNull { it.id == selectedDirectId }
+    val selectedSupport = YhcsSupportContacts.firstOrNull { it.key == selectedSupportKey }
+    val title = when {
+        selectedSupport != null -> selectedSupport.label
+        selectedConversation != null -> selectedConversation.participantName.ifBlank { "App user" }
+        else -> "YHCS direct messages"
+    }
+    val phone = selectedSupport?.phone ?: selectedConversation?.participantPhone.orEmpty()
+    var messageText by remember(selectedDirectId, selectedSupportKey) { mutableStateOf("") }
+    val messageListState = rememberLazyListState()
+    val context = LocalContext.current
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) messageListState.animateScrollToItem(messages.lastIndex)
+    }
+
+    if (isStaffInbox && selectedDirectId.isBlank()) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            Row(
+                Modifier.fillMaxWidth().background(WhatsAppGreen).padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("YHCS direct messages", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("Private conversations assigned to your account", color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp)
+                }
+                IconButton(onClick = viewModel::refreshDirectInbox) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.White)
+                }
+            }
+            if (conversations.isEmpty()) {
+                EmptyWorkflowState("No direct messages yet", "Patient, hospital, and doctor messages to your YHCS profile will appear here.")
+            } else {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(conversations, key = { "direct_${it.id}" }) { conversation ->
+                        Card(
+                            Modifier.fillMaxWidth().clickable { viewModel.selectDirectConversation(conversation.id) },
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(conversation.participantName.ifBlank { "App user" }, fontWeight = FontWeight.Bold)
+                                    Text(conversation.supportKey.replace("YHCS", "YHCS "), color = WhatsAppGreen, fontSize = 12.sp)
+                                }
+                                if (conversation.participantPhone.isNotBlank()) Text(conversation.participantPhone, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(conversation.lastMessage.ifBlank { "Start the conversation" }, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize().background(ChatCanvas).imePadding()) {
+        Row(
+            Modifier.fillMaxWidth().background(WhatsAppGreen).padding(start = 4.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (currentRole in listOf(com.example.data.model.UserRole.CALL_CENTER, com.example.data.model.UserRole.ADMIN)) {
+                IconButton(onClick = viewModel::closeDirectConversation) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back to inbox", tint = Color.White)
+                }
+            }
+            Surface(shape = CircleShape, color = Color.White.copy(alpha = 0.16f), modifier = Modifier.size(42.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(title.take(1).uppercase(Locale.getDefault()), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+                Text(
+                    when {
+                        selectedSupport != null -> "Private message to ${selectedSupport.label} · ${selectedSupport.phone}"
+                        selectedConversation != null -> selectedConversation.supportKey.replace("YHCS", "YHCS ") + " · " + (phone.ifBlank { "Secure conversation" })
+                        else -> "Secure conversation"
+                    },
+                    color = Color.White.copy(alpha = 0.88f), fontSize = 11.sp, maxLines = 1
+                )
+            }
+            if (phone.isNotBlank()) IconButton(onClick = { dial(context, phone) }) {
+                Icon(Icons.Default.Call, contentDescription = "Call $title", tint = Color.White)
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().background(ChatCanvas).chatDoodleWallpaper(WhatsAppGreen.copy(alpha = 0.55f))) {
+            if (messages.isEmpty()) {
+                Text(
+                    if (loading) "Opening secure conversation…" else "Send a message to start this conversation.",
+                    Modifier.align(Alignment.Center).padding(24.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 13.sp
+                )
+            } else {
+                LazyColumn(
+                    state = messageListState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        MessageBubble(
+                            MessageEntity(
+                                id = message.id,
+                                senderRole = message.senderRole,
+                                senderName = message.senderName,
+                                content = message.content,
+                                timestamp = message.timestamp,
+                                conversationId = "direct_$selectedDirectId",
+                                deliveryStatus = "SENT"
+                            ),
+                            outgoing = message.senderRole.equals(currentRole.name, ignoreCase = true)
+                        )
+                    }
+                }
+            }
+        }
+        Surface(color = Color.White, shadowElevation = 4.dp) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = { messageText = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Message") },
+                    maxLines = 4,
+                    shape = RoundedCornerShape(24.dp)
+                )
+                val canSend = messageText.isNotBlank() && selectedDirectId.isNotBlank() && !loading
+                IconButton(
+                    onClick = {
+                        viewModel.sendDirectMessage(messageText)
+                        messageText = ""
+                    },
+                    enabled = canSend,
+                    modifier = Modifier.size(48.dp).clip(CircleShape)
+                        .background(if (canSend) WhatsAppGreen else WhatsAppGreen.copy(alpha = 0.45f))
+                ) {
+                    Icon(Icons.Default.Send, contentDescription = "Send message", tint = Color.White, modifier = Modifier.size(21.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MessageBubble(message: MessageEntity, outgoing: Boolean) {
     Row(
         Modifier.fillMaxWidth(),
@@ -589,6 +803,9 @@ fun ManagerDashboardScreen(viewModel: YawarViewModel, onOpenMessages: () -> Unit
         }
         when (selectedTab) {
             0 -> {
+                OutlinedButton(onClick = { viewModel.openDirectInbox(); onOpenMessages() }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    Icon(Icons.Default.Chat, null); Spacer(Modifier.width(6.dp)); Text("YHCS direct messages")
+                }
                 QueueMetrics(requests)
                 if (requests.isEmpty()) EmptyWorkflowState("No open cases", "The manager can review every request in the shared call-center queue.")
                 else LazyColumn(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

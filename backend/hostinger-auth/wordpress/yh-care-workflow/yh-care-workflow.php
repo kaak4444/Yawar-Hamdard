@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Yawar Care Workflow API
- * Description: Role-protected case routing, care messages, hospital records and payment tracking for the Yawar Hamdard Android app.
- * Version: 1.0.0
+ * Description: Role-protected care routing, direct YHCS messages, hospital records and payment tracking for the Yawar Hamdard Android app.
+ * Version: 1.1.0
  */
 declare(strict_types=1);
 
@@ -23,6 +23,50 @@ function yh_workflow_db(): PDO
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false]
     );
     return $db;
+}
+
+function yh_ensure_direct_message_tables(PDO $db): void
+{
+    static $ready = false;
+    if ($ready) return;
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS care_direct_conversations (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            support_key VARCHAR(8) NOT NULL,
+            support_user_id BIGINT UNSIGNED NOT NULL,
+            participant_user_id BIGINT UNSIGNED NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_direct_support_participant (support_user_id, participant_user_id),
+            KEY idx_direct_participant_updated (participant_user_id, updated_at),
+            KEY idx_direct_support_updated (support_user_id, updated_at),
+            CONSTRAINT fk_direct_support_user FOREIGN KEY (support_user_id) REFERENCES app_users(id) ON DELETE RESTRICT,
+            CONSTRAINT fk_direct_participant_user FOREIGN KEY (participant_user_id) REFERENCES app_users(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $db->exec(
+        'CREATE TABLE IF NOT EXISTS care_direct_messages (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            conversation_id BIGINT UNSIGNED NOT NULL,
+            sender_user_id BIGINT UNSIGNED NOT NULL,
+            body TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_direct_message_conversation (conversation_id, created_at),
+            CONSTRAINT fk_direct_message_conversation FOREIGN KEY (conversation_id) REFERENCES care_direct_conversations(id) ON DELETE CASCADE,
+            CONSTRAINT fk_direct_message_sender FOREIGN KEY (sender_user_id) REFERENCES app_users(id) ON DELETE RESTRICT
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+    );
+    $ready = true;
+}
+
+function yh_direct_support_profiles(): array
+{
+    return [
+        'YHCS1' => ['email' => 'info@yawarconsulting.com', 'role' => 'call_center'],
+        'YHCS2' => ['email' => 'ibrahimkakar182@gmail.com', 'role' => 'admin'],
+    ];
 }
 
 function yh_private_config(): array
@@ -69,12 +113,12 @@ function yh_actor(WP_REST_Request $request): array|WP_Error
         $actor = $query->fetch();
         if ($actor === false) return yh_error(401, 'Please sign in again.');
         $email = strtolower((string)$actor['email']);
-        if ($actor['role'] === 'admin' && $email !== 'm.ibrahim@yawarconsulting.com') {
+        if ($actor['role'] === 'admin' && !in_array($email, ['m.ibrahim@yawarconsulting.com', 'ibrahimkakar182@gmail.com'], true)) {
             return yh_error(403, 'This manager account is not authorized.');
         }
         if ($actor['role'] === 'call_center' && !in_array($email, [
             'dr_eimalmalik@yawarconsulting.com', 'yh24@yawarconsulting.com',
-            'ibrahimkakar182@gmail.com', 'info@yawarconsulting.com',
+            'info@yawarconsulting.com',
         ], true)) {
             return yh_error(403, 'This call-center account is not authorized.');
         }
@@ -447,6 +491,178 @@ function yh_send_message(WP_REST_Request $request): WP_REST_Response|WP_Error
     return yh_ok(['id' => 'remote_' . $messageId, 'requestId' => $id, 'senderRole' => strtoupper((string)$actor['role']), 'senderName' => (string)$actor['full_name'], 'content' => $content, 'timestamp' => (int)(microtime(true) * 1000), 'conversationId' => 'case_' . $id, 'messageType' => 'TEXT', 'deliveryStatus' => 'SENT'], 201);
 }
 
+function yh_direct_conversation_row(PDO $db, int $conversationId): ?array
+{
+    $query = $db->prepare(
+        'SELECT c.id, c.support_key, c.support_user_id, c.participant_user_id, c.updated_at,
+                sp.full_name AS support_name, pp.full_name AS participant_name, pp.phone AS participant_phone,
+                (SELECT m.body FROM care_direct_messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_message
+         FROM care_direct_conversations c
+         JOIN app_users su ON su.id = c.support_user_id
+         LEFT JOIN app_profiles sp ON sp.user_id = su.id
+         JOIN app_users pu ON pu.id = c.participant_user_id
+         LEFT JOIN app_profiles pp ON pp.user_id = pu.id
+         WHERE c.id = ? LIMIT 1'
+    );
+    $query->execute([$conversationId]);
+    $row = $query->fetch();
+    return $row === false ? null : $row;
+}
+
+function yh_direct_conversation_json(array $row, array $actor): array
+{
+    $profiles = yh_direct_support_profiles();
+    $supportKey = (string)$row['support_key'];
+    $supportName = $supportKey === 'YHCS1' ? 'YHCS 1' : 'YHCS 2';
+    $isSupport = (int)$row['support_user_id'] === (int)$actor['id'];
+    return [
+        'id' => (string)$row['id'],
+        'supportKey' => $supportKey,
+        'supportName' => $supportName,
+        'participantName' => (string)($row['participant_name'] ?? 'App user'),
+        'participantPhone' => (string)($row['participant_phone'] ?? ''),
+        'lastMessage' => (string)($row['last_message'] ?? ''),
+        'updatedAtTimestamp' => (int)(strtotime((string)$row['updated_at'] . ' UTC') * 1000),
+        'isSupportAccount' => $isSupport,
+    ];
+}
+
+function yh_direct_messages_json(PDO $db, int $conversationId): array
+{
+    $query = $db->prepare(
+        'SELECT m.id, m.body, m.created_at, u.role, p.full_name
+         FROM care_direct_messages m JOIN app_users u ON u.id = m.sender_user_id
+         LEFT JOIN app_profiles p ON p.user_id = u.id
+         WHERE m.conversation_id = ? ORDER BY m.id ASC LIMIT 500'
+    );
+    $query->execute([$conversationId]);
+    return array_map(static fn(array $row): array => [
+        'id' => 'direct_' . (string)$row['id'],
+        'senderRole' => strtoupper((string)$row['role']),
+        'senderName' => (string)($row['full_name'] ?? 'YHCS'),
+        'content' => (string)$row['body'],
+        'timestamp' => (int)(strtotime((string)$row['created_at'] . ' UTC') * 1000),
+    ], $query->fetchAll());
+}
+
+function yh_direct_conversation_access(PDO $db, array $actor, int $conversationId): ?array
+{
+    $query = $db->prepare('SELECT * FROM care_direct_conversations WHERE id = ? LIMIT 1');
+    $query->execute([$conversationId]);
+    $row = $query->fetch();
+    if ($row === false || !in_array((int)$actor['id'], [(int)$row['support_user_id'], (int)$row['participant_user_id']], true)) return null;
+    return $row;
+}
+
+function yh_direct_list(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        $query = $db->prepare(
+            'SELECT c.id FROM care_direct_conversations c
+             WHERE c.support_user_id = ? OR c.participant_user_id = ?
+             ORDER BY c.updated_at DESC LIMIT 300'
+        );
+        $query->execute([(int)$actor['id'], (int)$actor['id']]);
+        $conversations = [];
+        foreach ($query->fetchAll() as $item) {
+            $row = yh_direct_conversation_row($db, (int)$item['id']);
+            if ($row !== null) $conversations[] = yh_direct_conversation_json($row, $actor);
+        }
+        return yh_ok(['directConversations' => $conversations]);
+    } catch (Throwable $error) {
+        error_log('Yawar direct-message inbox failed: ' . $error->getMessage());
+        return yh_error(503, 'YHCS messages are temporarily unavailable.');
+    }
+}
+
+function yh_direct_start(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $supportKey = strtoupper(sanitize_text_field((string)(yh_body($request)['supportKey'] ?? '')));
+    $profiles = yh_direct_support_profiles();
+    if (!isset($profiles[$supportKey])) return yh_error(422, 'Choose YHCS 1 or YHCS 2.');
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        $profile = $profiles[$supportKey];
+        $supportQuery = $db->prepare(
+            'SELECT u.id, u.role, u.is_active, u.email_verified_at
+             FROM app_users u WHERE LOWER(u.email) = ? LIMIT 1'
+        );
+        $supportQuery->execute([$profile['email']]);
+        $support = $supportQuery->fetch();
+        if ($support === false || !(int)$support['is_active'] || $support['email_verified_at'] === null || $support['role'] !== $profile['role']) {
+            return yh_error(503, $supportKey . ' is not registered and ready for messages yet.');
+        }
+        if ((int)$support['id'] === (int)$actor['id']) return yh_error(422, 'Open your YHCS message inbox to answer conversations.');
+        $insert = $db->prepare(
+            'INSERT INTO care_direct_conversations (support_key, support_user_id, participant_user_id)
+             VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id), support_key = VALUES(support_key)'
+        );
+        $insert->execute([$supportKey, (int)$support['id'], (int)$actor['id']]);
+        $conversationId = (int)$db->lastInsertId();
+        $row = yh_direct_conversation_row($db, $conversationId);
+        if ($row === null) return yh_error(503, 'The YHCS conversation could not be opened.');
+        return yh_ok([
+            'directConversation' => yh_direct_conversation_json($row, $actor),
+            'directMessages' => yh_direct_messages_json($db, $conversationId),
+        ], 201);
+    } catch (Throwable $error) {
+        error_log('Yawar direct-message open failed: ' . $error->getMessage());
+        return yh_error(503, 'The YHCS conversation is temporarily unavailable.');
+    }
+}
+
+function yh_direct_get(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $conversationId = (int)$request['conversation_id'];
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (yh_direct_conversation_access($db, $actor, $conversationId) === null) return yh_error(404, 'Conversation not found.');
+        $row = yh_direct_conversation_row($db, $conversationId);
+        if ($row === null) return yh_error(404, 'Conversation not found.');
+        return yh_ok([
+            'directConversation' => yh_direct_conversation_json($row, $actor),
+            'directMessages' => yh_direct_messages_json($db, $conversationId),
+        ]);
+    } catch (Throwable $error) {
+        error_log('Yawar direct-message read failed: ' . $error->getMessage());
+        return yh_error(503, 'This conversation is temporarily unavailable.');
+    }
+}
+
+function yh_direct_send(WP_REST_Request $request): WP_REST_Response|WP_Error
+{
+    $actor = yh_actor($request);
+    if (is_wp_error($actor)) return $actor;
+    $conversationId = (int)$request['conversation_id'];
+    $content = trim((string)(yh_body($request)['content'] ?? ''));
+    if ($content === '' || strlen($content) > 5000) return yh_error(422, 'Enter a message up to 5,000 characters.');
+    try {
+        $db = yh_workflow_db();
+        yh_ensure_direct_message_tables($db);
+        if (yh_direct_conversation_access($db, $actor, $conversationId) === null) return yh_error(404, 'Conversation not found.');
+        $db->beginTransaction();
+        $insert = $db->prepare('INSERT INTO care_direct_messages (conversation_id, sender_user_id, body) VALUES (?, ?, ?)');
+        $insert->execute([$conversationId, (int)$actor['id'], $content]);
+        $db->prepare('UPDATE care_direct_conversations SET updated_at = UTC_TIMESTAMP() WHERE id = ?')->execute([$conversationId]);
+        $db->commit();
+        return yh_ok(['sent' => true], 201);
+    } catch (Throwable $error) {
+        if (isset($db) && $db instanceof PDO && $db->inTransaction()) $db->rollBack();
+        error_log('Yawar direct-message send failed: ' . $error->getMessage());
+        return yh_error(503, 'The message could not be sent right now.');
+    }
+}
+
 function yh_upload_document(WP_REST_Request $request): WP_REST_Response|WP_Error
 {
     $actor = yh_actor($request);
@@ -727,6 +943,12 @@ add_action('rest_api_init', static function (): void {
     register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/route', ['methods' => 'POST', 'callback' => 'yh_route_request', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/requests/(?P<request_id>[A-Za-z0-9-]+)/documents-complete', ['methods' => 'POST', 'callback' => 'yh_complete_documents', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/messages', ['methods' => 'POST', 'callback' => 'yh_send_message', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/direct-conversations', [
+        ['methods' => 'GET', 'callback' => 'yh_direct_list', 'permission_callback' => '__return_true'],
+        ['methods' => 'POST', 'callback' => 'yh_direct_start', 'permission_callback' => '__return_true'],
+    ]);
+    register_rest_route('yh/v1', '/direct-conversations/(?P<conversation_id>\d+)', ['methods' => 'GET', 'callback' => 'yh_direct_get', 'permission_callback' => '__return_true']);
+    register_rest_route('yh/v1', '/direct-conversations/(?P<conversation_id>\d+)/messages', ['methods' => 'POST', 'callback' => 'yh_direct_send', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/documents', ['methods' => 'POST', 'callback' => 'yh_upload_document', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/documents/(?P<document_id>\d+)', ['methods' => 'GET', 'callback' => 'yh_get_document', 'permission_callback' => '__return_true']);
     register_rest_route('yh/v1', '/payments', ['methods' => 'POST', 'callback' => 'yh_save_payment', 'permission_callback' => '__return_true']);

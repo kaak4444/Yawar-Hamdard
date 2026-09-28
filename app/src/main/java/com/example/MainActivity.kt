@@ -223,6 +223,10 @@ class MainActivity : ComponentActivity() {
                                                 onOpenBooking = {
                                                     viewModel.startBooking()
                                                     isBookingActive = true
+                                                },
+                                                onOpenYhcsMessage = { key ->
+                                                    viewModel.openYhcsConversation(key)
+                                                    currentPatientTab = 4
                                                 }
                                             )
                                             1 -> FindCareScreen(
@@ -251,7 +255,13 @@ class MainActivity : ComponentActivity() {
 
                                     UserRole.DOCTOR -> {
                                         when (currentPatientTab) {
-                                            0 -> DoctorDashboardScreen(viewModel = viewModel)
+                                            0 -> DoctorDashboardScreen(
+                                                viewModel = viewModel,
+                                                onOpenYhcsMessage = { key ->
+                                                    viewModel.openYhcsConversation(key)
+                                                    currentPatientTab = 1
+                                                }
+                                            )
                                             1 -> CareMessagesScreen(viewModel = viewModel)
                                             else -> ProfileScreen(viewModel = viewModel)
                                         }
@@ -268,7 +278,14 @@ class MainActivity : ComponentActivity() {
 
                                     UserRole.HOSPITAL -> {
                                         when (currentPatientTab) {
-                                            0 -> HospitalDashboardScreen(viewModel = viewModel, onOpenMessages = { currentPatientTab = 1 })
+                                            0 -> HospitalDashboardScreen(
+                                                viewModel = viewModel,
+                                                onOpenMessages = { currentPatientTab = 1 },
+                                                onOpenYhcsMessage = { key ->
+                                                    viewModel.openYhcsConversation(key)
+                                                    currentPatientTab = 1
+                                                }
+                                            )
                                             1 -> CareMessagesScreen(viewModel = viewModel)
                                             else -> ProfileScreen(viewModel = viewModel)
                                         }

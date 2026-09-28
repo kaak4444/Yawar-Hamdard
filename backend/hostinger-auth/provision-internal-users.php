@@ -28,14 +28,19 @@ $staff = [
     'm.ibrahim@yawarconsulting.com' => ['admin', 'Yawar Hamdard Manager'],
     'dr_eimalmalik@yawarconsulting.com' => ['call_center', 'Dr Eimal Malik'],
     'yh24@yawarconsulting.com' => ['call_center', 'YHCS Call Center'],
-    'ibrahimkakar182@gmail.com' => ['call_center', 'Ibrahim Kakar'],
-    'info@yawarconsulting.com' => ['call_center', 'YHCS Information Desk'],
+    'ibrahimkakar182@gmail.com' => ['admin', 'Ibrahim Kakar'],
+    'info@yawarconsulting.com' => ['call_center', 'YHCS 1'],
+];
+
+$staffPhones = [
+    'ibrahimkakar182@gmail.com' => '+93 792 471 179',
+    'info@yawarconsulting.com' => '+93 707 438 303',
 ];
 
 foreach ($staff as $email => [$role, $name]) {
     $db->beginTransaction();
     try {
-        $lookup = $db->prepare('SELECT id, password_hash, email_verified_at FROM app_users WHERE email = ? LIMIT 1 FOR UPDATE');
+        $lookup = $db->prepare('SELECT id, role, is_active, email_verified_at FROM app_users WHERE email = ? LIMIT 1 FOR UPDATE');
         $lookup->execute([$email]);
         $existing = $lookup->fetch();
         $randomPassword = rtrim(strtr(base64_encode(random_bytes(48)), '+/', '-_'), '=');
@@ -49,23 +54,23 @@ foreach ($staff as $email => [$role, $name]) {
             $userId = (int)$db->lastInsertId();
         } else {
             $userId = (int)$existing['id'];
-            $passwordHash = $existing['email_verified_at'] === null
-                ? password_hash($randomPassword, PASSWORD_DEFAULT)
-                : (string)$existing['password_hash'];
             $update = $db->prepare(
-                'UPDATE app_users SET password_hash = ?, role = ?, is_active = 1, hospital_id = NULL,
+                'UPDATE app_users SET role = ?, is_active = 1, hospital_id = NULL,
                  email_verified_at = COALESCE(email_verified_at, UTC_TIMESTAMP()) WHERE id = ?'
             );
-            $update->execute([$passwordHash, $role, $userId]);
-            $revoke = $db->prepare('UPDATE app_sessions SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL');
-            $revoke->execute([$userId]);
+            $update->execute([$role, $userId]);
+            if ($existing['role'] !== $role || !(int)$existing['is_active'] || $existing['email_verified_at'] === null) {
+                $revoke = $db->prepare('UPDATE app_sessions SET revoked_at = UTC_TIMESTAMP() WHERE user_id = ? AND revoked_at IS NULL');
+                $revoke->execute([$userId]);
+            }
         }
 
         $profile = $db->prepare(
-            'INSERT INTO app_profiles (user_id, full_name, phone) VALUES (?, ?, \'\')
-             ON DUPLICATE KEY UPDATE full_name = VALUES(full_name)'
+            'INSERT INTO app_profiles (user_id, full_name, phone) VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE full_name = VALUES(full_name),
+             phone = IF(VALUES(phone) = \'\', phone, VALUES(phone))'
         );
-        $profile->execute([$userId, $name]);
+        $profile->execute([$userId, $name, $staffPhones[$email] ?? '']);
         $db->commit();
         fwrite(STDOUT, "Provisioned {$role}: {$email}\n");
     } catch (Throwable $error) {

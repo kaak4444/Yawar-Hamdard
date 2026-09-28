@@ -73,6 +73,7 @@ import com.example.ui.common.DoctorAvatarBadge
 import com.example.ui.common.EmergencyCard
 import com.example.ui.common.YawarSectionHeader
 import com.example.ui.common.HospitalLogoBadge
+import com.example.ui.common.YhcsContactCard
 import com.example.ui.common.VerifiedImageResources
 import com.example.ui.common.VerifiedProviderImage
 import com.example.ui.theme.BorderColor
@@ -100,6 +101,7 @@ fun PatientHomeScreen(
     onNavigateToClaims: () -> Unit,
     onNavigateToCases: () -> Unit,
     onOpenBooking: () -> Unit,
+    onOpenYhcsMessage: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val language by viewModel.currentLanguage.collectAsState()
@@ -122,6 +124,13 @@ fun PatientHomeScreen(
             Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
                 EmergencyCard(language = language)
             }
+        }
+
+        item {
+            YhcsContactCard(
+                onMessage = onOpenYhcsMessage,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
         }
 
         item {
