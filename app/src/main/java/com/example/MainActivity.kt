@@ -5,6 +5,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -40,7 +47,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -72,6 +81,7 @@ import com.example.ui.theme.YawarTheme
 import com.example.ui.theme.WhatsAppGreen
 import com.example.ui.theme.WhatsAppPaleGreen
 import com.example.ui.viewmodel.YawarViewModel
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -100,6 +110,12 @@ class MainActivity : ComponentActivity() {
                 var currentPatientTab by remember { mutableIntStateOf(0) }
                 var findCareInitialTab by remember { mutableIntStateOf(0) }
                 var isBookingActive by remember { mutableStateOf(false) }
+                var showOpeningSplash by remember { mutableStateOf(true) }
+
+                LaunchedEffect(Unit) {
+                    delay(780)
+                    showOpeningSplash = false
+                }
 
                 val snackbarHostState = remember { SnackbarHostState() }
 
@@ -117,7 +133,8 @@ class MainActivity : ComponentActivity() {
                     LayoutDirection.Ltr
                 }
 
-                CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                     if (!isUserLoggedIn) {
                         AuthOnboardingScreen(
                             currentLanguage = currentLanguage,
@@ -303,6 +320,23 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    }
+                    }
+
+                    AnimatedVisibility(
+                        visible = showOpeningSplash,
+                        modifier = Modifier.fillMaxSize(),
+                        enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+                            scaleIn(initialScale = 1.025f, animationSpec = tween(durationMillis = 500)),
+                        exit = fadeOut(animationSpec = tween(durationMillis = 350)) +
+                            scaleOut(targetScale = 1.025f, animationSpec = tween(durationMillis = 350))
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.yawar_launch_splash),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
                     }
                 }
             }
