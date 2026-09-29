@@ -14,14 +14,19 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.MedicalServices
@@ -35,6 +40,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -81,6 +87,7 @@ import com.example.ui.workflow.HospitalPayoutsScreen
 import com.example.ui.workflow.ManagerDashboardScreen
 import com.example.ui.workflow.PatientCareRequestsScreen
 import com.example.ui.workflow.VoiceCallMonitor
+import com.example.ui.workflow.VoiceCallScreen
 import com.example.ui.theme.YawarTheme
 import com.example.ui.theme.WhatsAppGreen
 import com.example.ui.theme.WhatsAppPaleGreen
@@ -106,6 +113,7 @@ class MainActivity : ComponentActivity() {
                 val currentLanguage by viewModel.currentLanguage.collectAsState()
                 val lowBandwidth by viewModel.lowBandwidthMode.collectAsState()
                 val unreadMessages by viewModel.unreadDirectMessageCount.collectAsState()
+                val activeVoiceCall by viewModel.voiceCall.collectAsState()
                 val snackbarMessage by viewModel.snackbarMessage.collectAsState()
 
                 val activeDoctor by viewModel.activeDoctorDetail.collectAsState()
@@ -115,7 +123,12 @@ class MainActivity : ComponentActivity() {
                 var currentPatientTab by remember { mutableIntStateOf(0) }
                 var findCareInitialTab by remember { mutableIntStateOf(0) }
                 var isBookingActive by remember { mutableStateOf(false) }
+                var isCallScreenMinimized by remember { mutableStateOf(false) }
                 var showOpeningSplash by remember { mutableStateOf(true) }
+
+                LaunchedEffect(activeVoiceCall?.callId) {
+                    isCallScreenMinimized = false
+                }
 
                 LaunchedEffect(Unit) {
                     delay(780)
@@ -157,6 +170,8 @@ class MainActivity : ComponentActivity() {
                             errorMessage = authError,
                             noticeMessage = authNotice
                         )
+                    } else if (activeVoiceCall != null && !isCallScreenMinimized) {
+                        VoiceCallScreen(viewModel, activeVoiceCall!!) { isCallScreenMinimized = true }
                     } else {
                         Scaffold(
                             modifier = Modifier.fillMaxSize(),
@@ -343,7 +358,22 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
 
-                            if (isUserLoggedIn) VoiceCallMonitor(viewModel)
+                        }
+                    }
+                    if (isUserLoggedIn) VoiceCallMonitor(viewModel)
+                    if (isUserLoggedIn && activeVoiceCall != null && isCallScreenMinimized) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.TopCenter).padding(top = 42.dp)
+                                .clickable { isCallScreenMinimized = false },
+                            color = WhatsAppGreen,
+                            shape = CircleShape,
+                            shadowElevation = 5.dp
+                        ) {
+                            Row(Modifier.padding(horizontal = 18.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Call, contentDescription = "Return to call", tint = Color.White, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(9.dp))
+                                Text("${activeVoiceCall.peerName} · ${activeVoiceCall.status}", color = Color.White, maxLines = 1)
+                            }
                         }
                     }
                     }

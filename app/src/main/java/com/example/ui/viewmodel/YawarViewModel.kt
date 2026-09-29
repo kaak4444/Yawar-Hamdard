@@ -104,10 +104,12 @@ data class BookingDraft(
 data class VoiceCallUiState(
     val callId: String,
     val peerName: String,
+    val peerPhotoUrl: String,
     val status: String,
     val outgoing: Boolean,
     val muted: Boolean = false,
-    val speakerOn: Boolean = false
+    val speakerOn: Boolean = false,
+    val connectedAtTimestamp: Long = 0L
 )
 
 class YawarViewModel(application: Application) : AndroidViewModel(application) {
@@ -526,12 +528,12 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendDirectMessage(content: String) {
+    fun sendDirectMessage(content: String, onComplete: (Boolean) -> Unit = {}) {
         val body = content.trim()
-        if (body.isEmpty()) return
-        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send messages.")
+        if (body.isEmpty()) return onComplete(false)
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send messages.").also { onComplete(false) }
         val conversationId = _selectedDirectConversationId.value
-        if (conversationId.isBlank()) return showSnackbar("Open a YHCS conversation first.")
+        if (conversationId.isBlank()) return showSnackbar("Open a YHCS conversation first.").also { onComplete(false) }
         viewModelScope.launch {
             try {
                 workflowApi.sendDirectMessage("Bearer $token", conversationId, SendDirectMessage(body))
@@ -539,18 +541,20 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 loadDirectConversation(token, conversationId)
                 val inbox = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
                 setDirectConversations(inbox?.directConversations.orEmpty())
+                onComplete(true)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 showSnackbar(error.message ?: "The message could not be sent.")
+                onComplete(false)
             }
         }
     }
 
-    fun sendDirectAttachment(file: File, mimeType: String, filename: String, content: String = "", voiceDurationSec: Int = 0) {
-        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send attachments.")
+    fun sendDirectAttachment(file: File, mimeType: String, filename: String, content: String = "", voiceDurationSec: Int = 0, onComplete: (Boolean) -> Unit = {}) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send attachments.").also { onComplete(false) }
         val conversationId = _selectedDirectConversationId.value
-        if (conversationId.isBlank()) return showSnackbar("Open a YHCS conversation first.")
-        if (!file.isFile || file.length() !in 1..(8L * 1024 * 1024)) return showSnackbar("Choose a file smaller than 8 MB.")
+        if (conversationId.isBlank()) return showSnackbar("Open a YHCS conversation first.").also { onComplete(false) }
+        if (!file.isFile || file.length() !in 1..(8L * 1024 * 1024)) return showSnackbar("Choose a file smaller than 8 MB.").also { onComplete(false) }
         viewModelScope.launch {
             try {
                 val textType = "text/plain".toMediaType()
@@ -564,16 +568,18 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 loadDirectConversation(token, conversationId)
                 val inbox = workflowApi.directConversations("Bearer $token").requireWorkflowSuccess().data
                 setDirectConversations(inbox?.directConversations.orEmpty())
+                onComplete(true)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 showSnackbar(error.message ?: "The attachment could not be sent.")
+                onComplete(false)
             }
         }
     }
 
-    fun sendCaseAttachment(requestId: String, file: File, mimeType: String, filename: String, content: String = "", voiceDurationSec: Int = 0) {
-        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send attachments.")
-        if (!file.isFile || file.length() !in 1..(8L * 1024 * 1024)) return showSnackbar("Choose a file smaller than 8 MB.")
+    fun sendCaseAttachment(requestId: String, file: File, mimeType: String, filename: String, content: String = "", voiceDurationSec: Int = 0, onComplete: (Boolean) -> Unit = {}) {
+        val token = authTokenStore.read() ?: return showSnackbar("Sign in again to send attachments.").also { onComplete(false) }
+        if (!file.isFile || file.length() !in 1..(8L * 1024 * 1024)) return showSnackbar("Choose a file smaller than 8 MB.").also { onComplete(false) }
         viewModelScope.launch {
             try {
                 val textType = "text/plain".toMediaType()
@@ -585,9 +591,11 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                     part
                 ).requireWorkflowSuccess()
                 refreshCaseMessages(requestId)
+                onComplete(true)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 showSnackbar(error.message ?: "The attachment could not be sent.")
+                onComplete(false)
             }
         }
     }
@@ -601,8 +609,9 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 val attachment = workflowApi.caseAttachment("Bearer $token", requestId, messageId.toString())
                     .requireWorkflowSuccess().data?.directAttachment
                     ?: throw IllegalStateException("The attachment is unavailable.")
+                if (attachment.size !in 1..(8L * 1024 * 1024)) throw IllegalStateException("This attachment is larger than the supported limit.")
                 val bytes = withContext(Dispatchers.IO) { android.util.Base64.decode(attachment.base64, android.util.Base64.DEFAULT) }
-                if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("This attachment is larger than the supported limit.")
+                if (bytes.size.toLong() != attachment.size) throw IllegalStateException("The attachment arrived incomplete. Please try again.")
                 val directory = File(getApplication<Application>().cacheDir, "direct-media").apply { mkdirs() }
                 val safeName = attachment.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._-]"), "_").take(120).ifBlank { "attachment" }
                 val file = File(directory, "${System.currentTimeMillis()}_$safeName")
@@ -638,8 +647,9 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 val attachment = workflowApi.directAttachment("Bearer $token", conversationId, messageId.toString())
                     .requireWorkflowSuccess().data?.directAttachment
                     ?: throw IllegalStateException("The attachment is unavailable.")
+                if (attachment.size !in 1..(8L * 1024 * 1024)) throw IllegalStateException("This attachment is larger than the supported limit.")
                 val bytes = withContext(Dispatchers.IO) { android.util.Base64.decode(attachment.base64, android.util.Base64.DEFAULT) }
-                if (bytes.size > 8 * 1024 * 1024) throw IllegalStateException("This attachment is larger than the supported limit.")
+                if (bytes.size.toLong() != attachment.size) throw IllegalStateException("The attachment arrived incomplete. Please try again.")
                 val directory = File(getApplication<Application>().cacheDir, "direct-media").apply { mkdirs() }
                 val safeName = attachment.filename.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[^A-Za-z0-9._-]"), "_").take(120).ifBlank { "attachment" }
                 val file = File(directory, "${System.currentTimeMillis()}_$safeName")
@@ -701,7 +711,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun beginOutgoingVoiceCall(token: String, call: WorkflowVoiceCall) {
-        _voiceCall.value = VoiceCallUiState(call.id, call.peerName, "Calling…", outgoing = true)
+        _voiceCall.value = VoiceCallUiState(call.id, call.peerName, call.peerPhotoUrl, "Calling…", outgoing = true)
         try {
             val iceServers = workflowApi.voiceConfiguration("Bearer $token").requireWorkflowSuccess().data?.iceServers.orEmpty()
             val engine = newVoiceEngine(token, call.id, iceServers)
@@ -720,7 +730,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         val token = authTokenStore.read() ?: return showSnackbar("Sign in again to answer.")
         if (_voiceCall.value != null) return showSnackbar("Finish the active call before answering another one.")
         _incomingVoiceCalls.value = _incomingVoiceCalls.value.filterNot { it.id == call.id }
-        _voiceCall.value = VoiceCallUiState(call.id, call.peerName, "Answering…", outgoing = false)
+        _voiceCall.value = VoiceCallUiState(call.id, call.peerName, call.peerPhotoUrl, "Answering…", outgoing = false)
         viewModelScope.launch {
             try {
                 workflowApi.sendVoiceSignal("Bearer $token", call.id, SendVoiceSignal("ACCEPT")).requireWorkflowSuccess()
@@ -784,7 +794,14 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
             onIceCandidate = { payload -> viewModelScope.launch {
                 runCatching { workflowApi.sendVoiceSignal("Bearer $token", callId, SendVoiceSignal("CANDIDATE", payload)).requireWorkflowSuccess() }
             } },
-            onConnectionState = { status -> _voiceCall.value = _voiceCall.value?.copy(status = status) }
+            onConnectionState = { status ->
+                _voiceCall.value = _voiceCall.value?.let { call ->
+                    call.copy(
+                        status = status,
+                        connectedAtTimestamp = if (status == "Connected" && call.connectedAtTimestamp == 0L) System.currentTimeMillis() else call.connectedAtTimestamp
+                    )
+                }
+            }
         )
     }
 
@@ -1378,23 +1395,27 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         messageType: String = "TEXT",
         attachmentName: String = "",
         attachmentSize: String = "",
-        voiceDurationSec: Int = 0
+        voiceDurationSec: Int = 0,
+        onComplete: (Boolean) -> Unit = {}
     ) {
-        if (content.isBlank() && messageType == "TEXT") return
+        if (content.isBlank() && messageType == "TEXT") return onComplete(false)
         viewModelScope.launch {
             val token = authTokenStore.read()
             val requestId = conversationId.removePrefix("case_")
             if (token == null || requestId == conversationId) {
                 showSnackbar("Open a care request to message its care team.")
+                onComplete(false)
                 return@launch
             }
             try {
                 workflowApi.sendMessage("Bearer $token", SendCaseMessage(requestId, content.trim()))
                     .requireWorkflowSuccess()
                 refreshWorkflowOnce(token)
+                onComplete(true)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 showSnackbar(error.message ?: "The message could not be sent.")
+                onComplete(false)
             }
         }
     }

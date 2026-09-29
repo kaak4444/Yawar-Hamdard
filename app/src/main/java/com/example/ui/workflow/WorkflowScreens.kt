@@ -8,6 +8,8 @@ import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,6 +57,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -71,6 +75,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,10 +84,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.data.auth.HospitalInput
 import com.example.data.auth.PaymentInput
 import com.example.data.auth.WorkflowDirectMessage
@@ -100,6 +108,7 @@ import com.example.ui.theme.ChatCanvas
 import com.example.ui.theme.ChatMeta
 import com.example.ui.theme.WhatsAppGreen
 import com.example.ui.viewmodel.YawarViewModel
+import coil.compose.AsyncImage
 import java.net.URLEncoder
 import java.io.File
 import java.text.SimpleDateFormat
@@ -553,12 +562,14 @@ fun CareMessagesScreen(viewModel: YawarViewModel) {
                 }
             }
         }
-        DirectChatComposer(
-            viewModel = viewModel,
-            enabled = request != null,
-            onSendText = { body -> request?.let { viewModel.sendMessage(body, "case_${it.id}") } },
-            onSendMedia = { media, caption -> request?.let { viewModel.sendCaseAttachment(it.id, media.file, media.mimeType, media.file.name, caption, media.durationSeconds) } }
-        )
+        key("case_composer_${request?.id.orEmpty()}") {
+            DirectChatComposer(
+                viewModel = viewModel,
+                enabled = request != null,
+                onSendText = { body, complete -> request?.let { viewModel.sendMessage(body, "case_${it.id}", onComplete = complete) } ?: complete(false) },
+                onSendMedia = { media, caption, complete -> request?.let { viewModel.sendCaseAttachment(it.id, media.file, media.mimeType, media.fileName, caption, media.durationSeconds, complete) } ?: complete(false) }
+            )
+        }
     }
 }
 
@@ -746,12 +757,16 @@ private fun YhcsDirectMessagesScreen(
                 }
             }
         }
-        DirectChatComposer(
-            viewModel = viewModel,
-            enabled = selectedDirectId.isNotBlank() && !loading,
-            onSendText = viewModel::sendDirectMessage,
-            onSendMedia = { media, caption -> viewModel.sendDirectAttachment(media.file, media.mimeType, media.file.name, caption, media.durationSeconds) }
-        )
+        key("direct_composer_$selectedDirectId") {
+            DirectChatComposer(
+                viewModel = viewModel,
+                enabled = selectedDirectId.isNotBlank() && !loading,
+                onSendText = { body, complete -> viewModel.sendDirectMessage(body, complete) },
+                onSendMedia = { media, caption, complete ->
+                    viewModel.sendDirectAttachment(media.file, media.mimeType, media.fileName, caption, media.durationSeconds, complete)
+                }
+            )
+        }
     }
 }
 
@@ -773,55 +788,155 @@ fun VoiceCallMonitor(viewModel: YawarViewModel) {
             kotlinx.coroutines.delay(2_500)
         }
     }
-    if (activeVoiceCall != null) {
-        AlertDialog(
-            onDismissRequest = viewModel::endVoiceCall,
-            title = { Text(activeVoiceCall?.peerName ?: "In-app call") },
-            text = { Text("${activeVoiceCall?.status ?: "Connecting…"}\nKeep the app open while you call.") },
-            confirmButton = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = viewModel::toggleVoiceCallMute) {
-                        Icon(if (activeVoiceCall?.muted == true) Icons.Default.MicOff else Icons.Default.Mic, null)
-                        Text(if (activeVoiceCall?.muted == true) "Unmute" else "Mute")
-                    }
-                    TextButton(onClick = viewModel::toggleVoiceCallSpeaker) {
-                        Icon(Icons.Default.VolumeUp, null)
-                        Text(if (activeVoiceCall?.speakerOn == true) "Earpiece" else "Speaker")
-                    }
-                    Button(onClick = viewModel::endVoiceCall) {
-                        Icon(Icons.Default.CallEnd, null)
-                        Text("End")
-                    }
+    val incoming = incomingCalls.firstOrNull().takeIf { activeVoiceCall == null }
+    if (incoming != null) Dialog(
+        onDismissRequest = { viewModel.rejectIncomingVoiceCall(incoming) },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(Modifier.fillMaxSize(), color = Color(0xFFF2F8F4)) {
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 36.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("INCOMING IN-APP CALL", color = WhatsAppGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    CallPeerAvatar(incoming.peerName, incoming.peerPhotoUrl, 164.dp)
+                    Text(incoming.peerName, fontWeight = FontWeight.Bold, fontSize = 27.sp, color = Color(0xFF17352A))
+                    Text("Calling you over the internet", color = Color(0xFF61756C), fontSize = 15.sp)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    CallAction(
+                        label = "Decline", icon = Icons.Default.CallEnd, tint = Color.White,
+                        background = Color(0xFFD94343), onClick = { viewModel.rejectIncomingVoiceCall(incoming) }
+                    )
+                    CallAction(
+                        label = "Answer", icon = Icons.Default.Call, tint = Color.White,
+                        background = WhatsAppGreen, onClick = {
+                            requestedAnswerCallId = incoming.id
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                                viewModel.acceptIncomingVoiceCall(incoming)
+                            } else callPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    )
                 }
             }
-        )
-    } else {
-        val incoming = incomingCalls.firstOrNull()
-        if (incoming != null) AlertDialog(
-            onDismissRequest = { viewModel.rejectIncomingVoiceCall(incoming) },
-            title = { Text("Incoming internet call") },
-            text = { Text("${incoming.peerName} is calling. Keep the app open to answer.") },
-            confirmButton = {
-                Button(onClick = {
-                    requestedAnswerCallId = incoming.id
-                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                        viewModel.acceptIncomingVoiceCall(incoming)
-                    } else callPermission.launch(Manifest.permission.RECORD_AUDIO)
-                }) { Text("Answer") }
-            },
-            dismissButton = { TextButton(onClick = { viewModel.rejectIncomingVoiceCall(incoming) }) { Text("Decline") } }
-        )
+        }
     }
 }
 
-private data class PendingDirectMedia(val file: File, val mimeType: String, val durationSeconds: Int = 0)
+@Composable
+fun VoiceCallScreen(viewModel: YawarViewModel, call: com.example.ui.viewmodel.VoiceCallUiState, onMinimize: () -> Unit) {
+    BackHandler(enabled = true, onBack = onMinimize)
+    var now by remember(call.callId) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(call.callId) {
+        while (true) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+    val elapsedSeconds = if (call.connectedAtTimestamp > 0L) ((now - call.connectedAtTimestamp) / 1000).coerceAtLeast(0) else 0
+    val elapsedLabel = "%02d:%02d".format(Locale.US, elapsedSeconds / 60, elapsedSeconds % 60)
+    val status = when {
+        call.status == "Connected" -> elapsedLabel
+        call.status.startsWith("Call could not") -> call.status
+        call.status == "Connection interrupted" -> "Reconnecting…"
+        else -> call.status
+    }
+    Surface(Modifier.fillMaxSize(), color = Color(0xFFF2F8F4)) {
+        Column(
+            Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 34.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onMinimize) { Icon(Icons.Default.ArrowBack, contentDescription = "Minimize call", tint = WhatsAppGreen) }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("YAWAR INTERNET CALL", color = WhatsAppGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.1.sp)
+                    Text("Private voice call", color = Color(0xFF789087), fontSize = 13.sp)
+                }
+                Spacer(Modifier.size(48.dp))
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                CallPeerAvatar(call.peerName, call.peerPhotoUrl, 184.dp)
+                Text(call.peerName, color = Color(0xFF17352A), fontWeight = FontWeight.Bold, fontSize = 28.sp, maxLines = 2)
+                Text(status, color = if (call.status.startsWith("Call could not")) MaterialTheme.colorScheme.error else WhatsAppGreen, fontSize = 16.sp)
+                if (call.status == "Connected") Text("Connected over the internet", color = Color(0xFF789087), fontSize = 12.sp)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(30.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    CallAction(
+                        label = if (call.muted) "Unmute" else "Mute",
+                        icon = if (call.muted) Icons.Default.MicOff else Icons.Default.Mic,
+                        tint = if (call.muted) Color.White else Color(0xFF2D493D),
+                        background = if (call.muted) WhatsAppGreen else Color.White,
+                        onClick = viewModel::toggleVoiceCallMute
+                    )
+                    CallAction(
+                        label = if (call.speakerOn) "Earpiece" else "Speaker",
+                        icon = Icons.Default.VolumeUp,
+                        tint = if (call.speakerOn) Color.White else Color(0xFF2D493D),
+                        background = if (call.speakerOn) WhatsAppGreen else Color.White,
+                        onClick = viewModel::toggleVoiceCallSpeaker
+                    )
+                }
+                CallAction(
+                    label = "End call", icon = Icons.Default.CallEnd,
+                    tint = Color.White, background = Color(0xFFD94343), onClick = viewModel::endVoiceCall,
+                    buttonSize = 72.dp
+                )
+                Text("Calls use your mobile data or Wi-Fi connection.", color = Color(0xFF789087), fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallPeerAvatar(name: String, photoUrl: String, size: androidx.compose.ui.unit.Dp) {
+    val initials = if (name.trim().startsWith("YHCS", ignoreCase = true)) "YH" else {
+        name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase(Locale.getDefault()) }.ifBlank { "YH" }
+    }
+    Surface(shape = CircleShape, color = Color(0xFFDCEFE5), modifier = Modifier.size(size)) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(initials, color = WhatsAppGreen, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.28f).sp)
+            if (photoUrl.startsWith("https://", ignoreCase = true)) {
+                AsyncImage(
+                    model = photoUrl,
+                    contentDescription = "$name profile photo",
+                    modifier = Modifier.fillMaxSize().clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    background: Color,
+    onClick: () -> Unit,
+    buttonSize: androidx.compose.ui.unit.Dp = 62.dp
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Surface(shape = CircleShape, color = background, shadowElevation = if (background == Color.White) 2.dp else 0.dp,
+            modifier = Modifier.size(buttonSize).clickable(onClick = onClick)) {
+            Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(27.dp)) }
+        }
+        Text(label, color = Color(0xFF2D493D), fontSize = 12.sp)
+    }
+}
+
+private data class PendingDirectMedia(val file: File, val mimeType: String, val durationSeconds: Int = 0, val fileName: String = file.name)
 
 @Composable
 private fun DirectChatComposer(
     viewModel: YawarViewModel,
     enabled: Boolean,
-    onSendText: (String) -> Unit,
-    onSendMedia: (PendingDirectMedia, String) -> Unit
+    onSendText: (String, (Boolean) -> Unit) -> Unit,
+    onSendMedia: (PendingDirectMedia, String, (Boolean) -> Unit) -> Unit
 ) {
     val context = LocalContext.current
     var messageText by remember { mutableStateOf("") }
@@ -829,6 +944,11 @@ private fun DirectChatComposer(
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var recordingFile by remember { mutableStateOf<File?>(null) }
     var recordingStartedAt by remember { mutableStateOf(0L) }
+    var sending by remember { mutableStateOf(false) }
+    val currentRecorder by androidx.compose.runtime.rememberUpdatedState(recorder)
+    val currentRecordingFile by androidx.compose.runtime.rememberUpdatedState(recordingFile)
+    val currentPendingMedia by androidx.compose.runtime.rememberUpdatedState(pendingMedia)
+    val currentSending by androidx.compose.runtime.rememberUpdatedState(sending)
 
     fun beginRecording() {
         runCatching {
@@ -853,42 +973,80 @@ private fun DirectChatComposer(
     }
     val attachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            var copiedFile: File? = null
             runCatching {
-                val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
-                val safeExtension = when (mime) {
+                val displayName = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getString(0) else null
+                }?.substringAfterLast('/')?.substringAfterLast('\\')?.take(120).orEmpty().ifBlank { "attachment" }
+                val rawMime = context.contentResolver.getType(uri)?.lowercase(Locale.ROOT).orEmpty()
+                val mime = when {
+                    rawMime == "image/jpg" -> "image/jpeg"
+                    rawMime.isNotBlank() && rawMime != "application/octet-stream" -> rawMime
+                    displayName.endsWith(".jpg", true) || displayName.endsWith(".jpeg", true) -> "image/jpeg"
+                    displayName.endsWith(".png", true) -> "image/png"
+                    displayName.endsWith(".webp", true) -> "image/webp"
+                    displayName.endsWith(".pdf", true) -> "application/pdf"
+                    else -> rawMime.ifBlank { "application/octet-stream" }
+                }
+                val extension = when (mime) {
                     "image/jpeg" -> ".jpg"
                     "image/png" -> ".png"
                     "image/webp" -> ".webp"
                     "application/pdf" -> ".pdf"
-                    else -> throw IllegalArgumentException("Choose a JPG, PNG, WebP, or PDF file.")
+                    else -> throw IllegalArgumentException("Choose a supported photo or PDF document.")
                 }
                 val directory = File(context.cacheDir, "direct-media").apply { mkdirs() }
-                val output = File(directory, "attachment_${System.currentTimeMillis()}$safeExtension")
+                val output = File(directory, "attachment_${System.currentTimeMillis()}$extension")
+                copiedFile = output
                 context.contentResolver.openInputStream(uri)?.use { input ->
-                    output.outputStream().use { outputStream -> input.copyTo(outputStream) }
-                }
-                    ?: throw IllegalArgumentException("The selected file could not be read.")
-                if (output.length() > 8L * 1024 * 1024) throw IllegalArgumentException("Attachments must be smaller than 8 MB.")
-                pendingMedia = PendingDirectMedia(output, mime)
-            }.onFailure { viewModel.showSnackbar(it.message ?: "Could not open that file.") }
+                    output.outputStream().use { outputStream ->
+                        val buffer = ByteArray(16 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            if (total > 8L * 1024 * 1024) throw IllegalArgumentException("Attachments must be smaller than 8 MB.")
+                            outputStream.write(buffer, 0, read)
+                        }
+                    }
+                } ?: throw IllegalArgumentException("The selected file could not be read.")
+                if (output.length() == 0L) throw IllegalArgumentException("The selected file is empty.")
+                pendingMedia = PendingDirectMedia(output, mime, fileName = displayName)
+            }.onFailure {
+                copiedFile?.delete()
+                viewModel.showSnackbar(it.message ?: "Could not open that file.")
+            }
         }
     }
 
-    DisposableEffect(recorder) {
+    DisposableEffect(Unit) {
         onDispose {
-            recorder?.let { active -> runCatching { active.stop() }; runCatching { active.release() } }
+            currentRecorder?.let { active -> runCatching { active.stop() }; runCatching { active.release() } }
+            currentRecordingFile?.delete()
+            if (!currentSending) currentPendingMedia?.file?.delete()
         }
     }
     Surface(color = Color.White, shadowElevation = 4.dp) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             pendingMedia?.let { media ->
-                Text(
-                    (if (media.durationSeconds > 0) "Voice note · ${media.durationSeconds}s" else "Attachment ready") + " · tap × to remove",
-                    Modifier.padding(start = 10.dp), color = WhatsAppGreen, fontSize = 12.sp
-                )
+                Row(Modifier.fillMaxWidth().padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (sending) "Sending ${media.fileName}…" else "${media.fileName} · ${(media.file.length() / 1024).coerceAtLeast(1)} KB · tap × to remove",
+                        Modifier.weight(1f), color = WhatsAppGreen, fontSize = 12.sp, maxLines = 1
+                    )
+                    if (sending) CircularProgressIndicator(Modifier.size(17.dp), color = WhatsAppGreen, strokeWidth = 2.dp)
+                    else TextButton(onClick = { media.file.delete(); pendingMedia = null }, enabled = enabled) { Text("×", color = WhatsAppGreen) }
+                }
+            }
+            if (sending && pendingMedia == null) {
+                Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CircularProgressIndicator(Modifier.size(16.dp), color = WhatsAppGreen, strokeWidth = 2.dp)
+                    Text("Sending message…", color = WhatsAppGreen, fontSize = 12.sp)
+                }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                IconButton(onClick = { attachmentPicker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "application/pdf")) }, enabled = enabled && recorder == null) {
+                IconButton(onClick = { attachmentPicker.launch(arrayOf("image/jpeg", "image/png", "image/webp", "application/pdf")) }, enabled = enabled && recorder == null && !sending) {
                     Icon(Icons.Default.AttachFile, contentDescription = "Attach a photo or PDF", tint = WhatsAppGreen)
                 }
                 OutlinedTextField(
@@ -898,7 +1056,7 @@ private fun DirectChatComposer(
                     placeholder = { Text("Message") },
                     maxLines = 4,
                     shape = RoundedCornerShape(24.dp),
-                    enabled = enabled && recorder == null
+                    enabled = enabled && recorder == null && !sending
                 )
                 IconButton(
                     onClick = {
@@ -922,20 +1080,27 @@ private fun DirectChatComposer(
                             beginRecording()
                         } else microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
                     },
-                    enabled = enabled
+                    enabled = enabled && !sending
                 ) {
                     Icon(if (recorder == null) Icons.Default.Mic else Icons.Default.Stop,
                         contentDescription = if (recorder == null) "Record voice message" else "Stop recording",
                         tint = if (recorder == null) WhatsAppGreen else MaterialTheme.colorScheme.error)
                 }
-                val canSend = enabled && (messageText.isNotBlank() || pendingMedia != null)
+                val canSend = enabled && !sending && (messageText.isNotBlank() || pendingMedia != null)
                 IconButton(
                     onClick = {
                         val media = pendingMedia
-                        if (media != null) onSendMedia(media, messageText)
-                        else onSendText(messageText)
-                        messageText = ""
-                        pendingMedia = null
+                        sending = true
+                        val complete: (Boolean) -> Unit = { success ->
+                            sending = false
+                            if (success) {
+                                messageText = ""
+                                pendingMedia?.file?.delete()
+                                pendingMedia = null
+                            }
+                        }
+                        if (media != null) onSendMedia(media, messageText, complete)
+                        else onSendText(messageText, complete)
                     },
                     enabled = canSend,
                     modifier = Modifier.size(46.dp).clip(CircleShape)
@@ -973,15 +1138,26 @@ private fun DirectWorkflowMessageBubble(
         if (message.messageType == "VOICE" || message.messageType == "ATTACHMENT") {
             if (message.messageType == "VOICE" && localFile != null) {
                 VoiceNotePlayer(localFile!!, message.voiceDurationSec)
+            } else if (message.messageType == "ATTACHMENT" && message.attachmentMimeType.startsWith("image/") && localFile != null) {
+                AsyncImage(
+                    model = localFile,
+                    contentDescription = message.attachmentName.ifBlank { "Photo attachment" },
+                    modifier = Modifier.width(240.dp).height(180.dp).clip(RoundedCornerShape(14.dp)).clickable { onOpenFile(localFile!!, message.attachmentMimeType) },
+                    contentScale = ContentScale.Crop
+                )
             } else {
                 TextButton(onClick = {
                     onDownload { file, mime ->
                         localFile = file
-                        if (message.messageType == "ATTACHMENT") onOpenFile(file, mime)
+                        if (message.messageType == "ATTACHMENT" && !mime.startsWith("image/")) onOpenFile(file, mime)
                     }
                 }) {
-                    Icon(if (message.messageType == "VOICE") Icons.Default.PlayArrow else Icons.Default.UploadFile, null)
-                    Text(if (message.messageType == "VOICE") "Play voice message" else "Open ${message.attachmentName.ifBlank { "attachment" }}")
+                    Icon(Icons.Default.UploadFile, null)
+                    Text(when {
+                        message.messageType == "VOICE" -> "Download voice message"
+                        message.attachmentMimeType.startsWith("image/") -> "Load photo preview"
+                        else -> "Open ${message.attachmentName.ifBlank { "attachment" }}"
+                    })
                 }
             }
         }
@@ -1006,14 +1182,26 @@ private fun CaseWorkflowMessageBubble(
         MessageBubble(message.copy(content = displayText), outgoing)
         if (message.messageType == "VOICE" || message.messageType == "ATTACHMENT") {
             if (message.messageType == "VOICE" && localFile != null) VoiceNotePlayer(localFile!!, message.voiceDurationSec)
+            else if (message.messageType == "ATTACHMENT" && message.attachmentMimeType.startsWith("image/") && localFile != null) {
+                AsyncImage(
+                    model = localFile,
+                    contentDescription = message.attachmentName.ifBlank { "Photo attachment" },
+                    modifier = Modifier.width(240.dp).height(180.dp).clip(RoundedCornerShape(14.dp)).clickable { onOpenFile(localFile!!, message.attachmentMimeType) },
+                    contentScale = ContentScale.Crop
+                )
+            }
             else TextButton(onClick = {
                 onDownload { file, mime ->
                     localFile = file
-                    if (message.messageType == "ATTACHMENT") onOpenFile(file, mime)
+                    if (message.messageType == "ATTACHMENT" && !mime.startsWith("image/")) onOpenFile(file, mime)
                 }
             }) {
-                Icon(if (message.messageType == "VOICE") Icons.Default.PlayArrow else Icons.Default.UploadFile, null)
-                Text(if (message.messageType == "VOICE") "Play voice message" else "Open ${message.attachmentName.ifBlank { "attachment" }}")
+                Icon(Icons.Default.UploadFile, null)
+                Text(when {
+                    message.messageType == "VOICE" -> "Download voice message"
+                    message.attachmentMimeType.startsWith("image/") -> "Load photo preview"
+                    else -> "Open ${message.attachmentName.ifBlank { "attachment" }}"
+                })
             }
         }
     }

@@ -86,6 +86,7 @@ internal data class WorkflowVoiceCall(
     val status: String = "RINGING",
     val caller: Boolean = false,
     val peerName: String = "Yawar contact",
+    val peerPhotoUrl: String = "",
     val createdAtTimestamp: Long = 0L
 )
 

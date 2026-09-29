@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Yawar Care Workflow API
  * Description: Role-protected care routing, direct YHCS messages, hospital records and payment tracking for the Yawar Hamdard Android app.
- * Version: 1.2.0
+ * Version: 1.2.1
  */
 declare(strict_types=1);
 
@@ -847,11 +847,14 @@ function yh_direct_attachment_download(WP_REST_Request $request): WP_REST_Respon
 function yh_voice_call_json(PDO $db, array $call, int $actorId): array
 {
     $otherId = (int)$call['caller_user_id'] === $actorId ? (int)$call['callee_user_id'] : (int)$call['caller_user_id'];
-    $name = $db->prepare('SELECT p.full_name FROM app_users u LEFT JOIN app_profiles p ON p.user_id = u.id WHERE u.id = ?');
-    $name->execute([$otherId]);
+    $peer = $db->prepare('SELECT p.full_name, COALESCE(NULLIF(d.photo_url, \'\'), h.logo_url, \'\') AS photo_url FROM app_users u LEFT JOIN app_profiles p ON p.user_id = u.id LEFT JOIN doctor_profiles d ON d.user_id = u.id LEFT JOIN care_hospitals h ON h.id = u.hospital_id WHERE u.id = ?');
+    $peer->execute([$otherId]);
+    $peerProfile = $peer->fetch() ?: [];
+    $peerName = (string)($peerProfile['full_name'] ?? '');
     return ['id' => (string)$call['id'], 'conversationId' => (string)($call['conversation_id'] ?? ''),
         'requestId' => (string)($call['request_id'] ?? ''), 'status' => (string)$call['status'],
-        'caller' => (int)$call['caller_user_id'] === $actorId, 'peerName' => (string)($name->fetchColumn() ?: 'Yawar contact'),
+        'caller' => (int)$call['caller_user_id'] === $actorId, 'peerName' => $peerName !== '' ? $peerName : 'Yawar contact',
+        'peerPhotoUrl' => (string)($peerProfile['photo_url'] ?? ''),
         'createdAtTimestamp' => (int)(strtotime((string)$call['created_at'] . ' UTC') * 1000)];
 }
 
