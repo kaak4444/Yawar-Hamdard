@@ -50,6 +50,20 @@ alter table public.care_conversations enable row level security;
 alter table public.care_conversation_members enable row level security;
 alter table public.care_messages enable row level security;
 
+-- SECURITY DEFINER avoids recursive RLS evaluation when checking membership.
+create or replace function public.is_care_member(target_conversation uuid, target_user uuid default auth.uid())
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.care_conversation_members
+    where conversation_id = target_conversation and user_id = target_user
+  );
+$$;
+
 drop policy if exists care_profiles_read on public.care_profiles;
 create policy care_profiles_read on public.care_profiles for select to authenticated
   using (true);
@@ -59,40 +73,28 @@ create policy care_profiles_self_write on public.care_profiles for all to authen
 
 drop policy if exists care_conversations_member_read on public.care_conversations;
 create policy care_conversations_member_read on public.care_conversations for select to authenticated
-  using (exists (select 1 from public.care_conversation_members m
-                 where m.conversation_id = id and m.user_id = auth.uid()));
+  using (public.is_care_member(id));
 drop policy if exists care_conversations_member_insert on public.care_conversations;
 create policy care_conversations_member_insert on public.care_conversations for insert to authenticated
   with check (true);
 
 drop policy if exists care_members_read on public.care_conversation_members;
 create policy care_members_read on public.care_conversation_members for select to authenticated
-  using (user_id = auth.uid() or exists (select 1 from public.care_conversation_members m
-                                         where m.conversation_id = conversation_id
-                                           and m.user_id = auth.uid()));
+  using (public.is_care_member(conversation_id));
 drop policy if exists care_members_insert_self on public.care_conversation_members;
 create policy care_members_insert_self on public.care_conversation_members for insert to authenticated
-  with check (user_id = auth.uid() or exists (select 1 from public.care_conversation_members m
-                                               where m.conversation_id = conversation_id
-                                                 and m.user_id = auth.uid()));
+  with check (user_id = auth.uid() or public.is_care_member(conversation_id));
 
 drop policy if exists care_messages_member_read on public.care_messages;
 create policy care_messages_member_read on public.care_messages for select to authenticated
-  using (exists (select 1 from public.care_conversation_members m
-                 where m.conversation_id = conversation_id and m.user_id = auth.uid()));
+  using (public.is_care_member(conversation_id));
 drop policy if exists care_messages_member_insert on public.care_messages;
 create policy care_messages_member_insert on public.care_messages for insert to authenticated
-  with check (sender_id = auth.uid() and exists (select 1 from public.care_conversation_members m
-                                                 where m.conversation_id = conversation_id
-                                                   and m.user_id = auth.uid()));
+  with check (sender_id = auth.uid() and public.is_care_member(conversation_id));
 drop policy if exists care_messages_member_update on public.care_messages;
 create policy care_messages_member_update on public.care_messages for update to authenticated
-  using (sender_id = auth.uid() or exists (select 1 from public.care_conversation_members m
-                                           where m.conversation_id = conversation_id
-                                             and m.user_id = auth.uid()))
-  with check (sender_id = auth.uid() or exists (select 1 from public.care_conversation_members m
-                                                where m.conversation_id = conversation_id
-                                                  and m.user_id = auth.uid()));
+  using (sender_id = auth.uid() or public.is_care_member(conversation_id))
+  with check (sender_id = auth.uid() or public.is_care_member(conversation_id));
 
 insert into storage.buckets (id, name, public)
 values ('care-attachments', 'care-attachments', false)
