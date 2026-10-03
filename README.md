@@ -17,6 +17,10 @@ or a Supabase Edge Function. Hostinger remains the source of truth for the
 existing auth, appointments, referrals, and messages while the Realtime and
 Storage migration is completed behind `app/src/main/java/com/example/data/supabase/`.
 
+The Supabase table, RLS, private attachment bucket, and Realtime publication
+definitions are in `backend/supabase-schema.sql`. Run that file once in the
+Supabase SQL editor before switching conversations to the Supabase boundary.
+
 This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/9d413859-ce46-4aca-9617-302c82885fe2
