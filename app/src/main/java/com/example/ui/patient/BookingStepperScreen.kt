@@ -93,7 +93,9 @@ fun BookingStepperScreen(
     val profile by viewModel.userProfile.collectAsState()
     val lastRef by viewModel.lastSubmittedReference.collectAsState()
 
-    val totalSteps = 8
+    // Keep the request simple: account details are shown for context, then the
+    // patient can describe the concern in two optional free-text fields.
+    val totalSteps = 2
 
     Column(
         modifier = modifier
@@ -199,12 +201,6 @@ fun BookingStepperScreen(
             when (step) {
                 1 -> Step1Who(fullName = profile?.fullName.orEmpty(), phone = profile?.phone.orEmpty())
                 2 -> Step2WhatCare(draft = draft, onUpdate = viewModel::updateBookingDraft)
-                3 -> Step3Where(draft = draft, facilities = facilities, onUpdate = viewModel::updateBookingDraft)
-                4 -> Step4WhoDoctor(draft = draft)
-                5 -> Step5When(draft = draft, onUpdate = viewModel::updateBookingDraft)
-                6 -> Step6Coverage(draft = draft, onUpdate = viewModel::updateBookingDraft)
-                7 -> Step7ContactPref(draft = draft, onUpdate = viewModel::updateBookingDraft)
-                8 -> Step8ReviewConsent(draft = draft, patientName = profile?.fullName.orEmpty(), onUpdate = viewModel::updateBookingDraft)
                 9 -> Step9Confirmation(
                     referenceId = lastRef ?: "—",
                     draft = draft,
@@ -360,12 +356,9 @@ private fun Step2WhatCare(
     draft: com.example.ui.viewmodel.BookingDraft,
     onUpdate: ((com.example.ui.viewmodel.BookingDraft) -> com.example.ui.viewmodel.BookingDraft) -> Unit
 ) {
-    val specialties = listOf("Cardiology", "Orthopedics & Trauma", "Pediatrics", "Internal Medicine", "General Surgery", "Neurology")
-    val urgencies = listOf("Routine", "Priority", "Urgent")
-
     Column {
         Text(
-            text = "2. What care is needed?",
+            text = "2. Tell us what you need",
             style = MaterialTheme.typography.titleLarge.copy(
                 fontWeight = FontWeight.Bold,
                 color = Ink,
@@ -373,66 +366,18 @@ private fun Step2WhatCare(
             )
         )
         Text(
-            text = "Specify the clinical discipline, urgency, and core reason for consultation.",
+            text = "Both fields are optional. A YHCS coordinator will follow up if more detail is needed.",
             color = Slate,
             fontSize = 13.sp
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Select Medical Specialty", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Ink)
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            specialties.take(3).forEach { spec ->
-                FilterChip(
-                    selected = draft.specialty == spec,
-                    onClick = { onUpdate { it.copy(specialty = spec) } },
-                    label = { Text(spec, fontSize = 11.sp) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PaleGreen)
-                )
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            specialties.drop(3).forEach { spec ->
-                FilterChip(
-                    selected = draft.specialty == spec,
-                    onClick = { onUpdate { it.copy(specialty = spec) } },
-                    label = { Text(spec, fontSize = 11.sp) },
-                    colors = FilterChipDefaults.filterChipColors(selectedContainerColor = PaleGreen)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Text("Urgency Level", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Ink)
-        Spacer(modifier = Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            urgencies.forEach { urg ->
-                FilterChip(
-                    selected = draft.urgency == urg,
-                    onClick = { onUpdate { it.copy(urgency = urg) } },
-                    label = { Text(urg, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = if (urg == "Urgent") DangerBg else PaleBlue
-                    )
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
         OutlinedTextField(
             value = draft.reasonForCare,
             onValueChange = { reason -> onUpdate { it.copy(reasonForCare = reason) } },
-            label = { Text("Primary Reason for Care / Chief Complaint") },
-            placeholder = { Text("e.g. Chest tightness on exertion, shortness of breath") },
+            label = { Text("What type of illness or concern is this? (Optional)") },
+            placeholder = { Text("For example: pain, fever, injury, check-up") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -441,10 +386,11 @@ private fun Step2WhatCare(
         OutlinedTextField(
             value = draft.symptomsSummary,
             onValueChange = { sym -> onUpdate { it.copy(symptomsSummary = sym) } },
-            label = { Text("Symptoms & Duration (Optional)") },
-            placeholder = { Text("e.g. Started 2 weeks ago, worse in morning") },
+            label = { Text("Explain the problem (Optional)") },
+            placeholder = { Text("Add symptoms, timing, or anything you want the care team to know") },
             modifier = Modifier.fillMaxWidth(),
-            minLines = 2
+            minLines = 6,
+            maxLines = 10
         )
     }
 }

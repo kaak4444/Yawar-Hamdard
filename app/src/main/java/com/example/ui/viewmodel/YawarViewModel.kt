@@ -82,7 +82,7 @@ import java.util.Date
 import kotlin.random.Random
 
 data class BookingDraft(
-    val specialty: String = "Cardiology",
+    val specialty: String = "",
     val reasonForCare: String = "",
     val symptomsSummary: String = "",
     val urgency: String = "Routine",
@@ -1236,7 +1236,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Booking Flow controls
-    fun startBooking(doctor: DoctorEntity? = null, specialty: String = "Cardiology") {
+    fun startBooking(doctor: DoctorEntity? = null, specialty: String = "") {
         _bookingDraft.value = BookingDraft(
             specialty = doctor?.specialty ?: specialty,
             doctorId = "",
@@ -1268,14 +1268,6 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     fun submitBooking() {
         viewModelScope.launch {
             val draft = _bookingDraft.value
-            if (draft.reasonForCare.isBlank()) {
-                showSnackbar("Describe your health concern before sending the request.")
-                return@launch
-            }
-            if (!draft.consentGiven) {
-                showSnackbar("Review the privacy notice and provide your consent before sending this request.")
-                return@launch
-            }
             val token = authTokenStore.read()
             if (token == null) {
                 showSnackbar("Sign in again to send a care request.")
