@@ -38,6 +38,8 @@ import com.example.data.auth.WorkflowPayment
 import com.example.data.auth.WorkflowRequest
 import com.example.data.auth.requireSuccessfulBody
 import com.example.data.auth.requireWorkflowSuccess
+import com.example.data.supabase.SupabaseSession
+import com.example.data.supabase.SupabaseSessionBridge
 import com.example.data.local.AppointmentEntity
 import com.example.data.local.ClaimEntity
 import com.example.data.local.CoordinationCaseEntity
@@ -118,6 +120,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     private val authApi = HostingerAuthApi.create()
     private val workflowApi = HostingerWorkflowApi.create()
     private val authTokenStore = AuthTokenStore(application)
+    private val supabaseSessionBridge = SupabaseSessionBridge()
     private var workflowRefreshJob: Job? = null
     private var directInboxRefreshJob: Job? = null
     private var incomingCallRefreshJob: Job? = null
@@ -138,6 +141,8 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     val passwordResetPending: StateFlow<Boolean> = _passwordResetPending.asStateFlow()
     private val _isUserLoggedIn = MutableStateFlow(false)
     val isUserLoggedIn: StateFlow<Boolean> = _isUserLoggedIn.asStateFlow()
+    private val _supabaseSession = MutableStateFlow<SupabaseSession?>(null)
+    val supabaseSession: StateFlow<SupabaseSession?> = _supabaseSession.asStateFlow()
 
     private val _currentRole = MutableStateFlow(UserRole.PATIENT)
     val currentRole: StateFlow<UserRole> = _currentRole.asStateFlow()
@@ -256,6 +261,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
                 val response = authApi.currentUser("Bearer $token")
                 val result = response.requireSuccessfulBody()
                 applyUser(result.user)
+                syncSupabaseSession(token)
                 _authLoading.value = false
             } catch (error: Exception) {
                 _authLoading.value = false
@@ -290,7 +296,16 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
         val token = result.token ?: throw IllegalStateException("The server did not return a session token.")
         authTokenStore.write(token)
         applyUser(result.user)
+        syncSupabaseSession(token)
         clearAuthFeedback()
+    }
+
+    private fun syncSupabaseSession(hostingerToken: String) {
+        viewModelScope.launch {
+            runCatching { supabaseSessionBridge.exchange(hostingerToken) }
+                .onSuccess { _supabaseSession.value = it }
+                .onFailure { _supabaseSession.value = null }
+        }
     }
 
     private fun applyUser(user: com.example.data.auth.AuthApiUser?) {
@@ -335,6 +350,7 @@ class YawarViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         val token = authTokenStore.read()
         authTokenStore.clear()
+        _supabaseSession.value = null
         _isUserLoggedIn.value = false
         _currentRole.value = UserRole.PATIENT
         workflowRefreshJob?.cancel()

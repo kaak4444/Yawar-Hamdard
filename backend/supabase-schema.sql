@@ -59,7 +59,7 @@ returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = ''
 as $$
   select exists (
     select 1 from public.care_conversation_members
@@ -105,12 +105,15 @@ create policy care_profiles_self_insert on public.care_profiles for insert to au
 drop policy if exists care_profiles_self_update on public.care_profiles;
 create policy care_profiles_self_update on public.care_profiles for update to authenticated
   using (id = auth.uid()) with check (id = auth.uid());
+revoke insert, update, delete on public.care_profiles from authenticated, anon;
+grant insert on public.care_profiles to authenticated;
+grant update (display_name, avatar_path, phone, updated_at) on public.care_profiles to authenticated;
 
 create or replace function private.protect_care_profile_role()
 returns trigger language plpgsql security definer set search_path = public, private as $$
 begin
   if tg_op = 'UPDATE' and old.role is distinct from new.role
-     and coalesce(auth.role(), '') <> 'service_role' then
+     and coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then
     raise exception 'Profile role changes require an administrator';
   end if;
   return new;
@@ -132,8 +135,7 @@ drop policy if exists care_members_read on public.care_conversation_members;
 create policy care_members_read on public.care_conversation_members for select to authenticated
   using (private.is_care_member(conversation_id));
 drop policy if exists care_members_insert_self on public.care_conversation_members;
-create policy care_members_insert_self on public.care_conversation_members for insert to authenticated
-  with check (user_id = auth.uid());
+revoke insert, update, delete on public.care_conversation_members from authenticated, anon;
 
 drop policy if exists care_messages_member_read on public.care_messages;
 create policy care_messages_member_read on public.care_messages for select to authenticated
@@ -145,6 +147,9 @@ drop policy if exists care_messages_member_update on public.care_messages;
 create policy care_messages_member_update on public.care_messages for update to authenticated
   using (sender_id = auth.uid())
   with check (sender_id = auth.uid());
+revoke insert, update, delete on public.care_messages from authenticated, anon;
+grant insert on public.care_messages to authenticated;
+grant update (body, read_at) on public.care_messages to authenticated;
 
 insert into storage.buckets (id, name, public)
 values ('care-attachments', 'care-attachments', false)
