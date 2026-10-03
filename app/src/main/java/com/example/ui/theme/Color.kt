@@ -48,17 +48,18 @@ val PurpleSoft = PaleBlue               // Blue tint for legacy purple accents
 val PurpleAccent = YawarBlueLight       // Blue replacement for the legacy purple accent
 val SlateSoft = Color(0xFFEDF2F7)       // Auth segmented-control track
 
-// Light WhatsApp-inspired palette, reserved for the conversation screens.
-val WhatsAppGreen = Color(0xFF075E54)
-val WhatsAppGreenBright = Color(0xFF128C7E)
-val WhatsAppPaleGreen = Color(0xFFE7F4EA)
-val ChatCanvas = Color(0xFFF4F7F4)
+// Conversation palette: WhatsApp-style hierarchy with Yawar's blue brand color.
+// The legacy names remain so existing screens keep a single shared semantic accent.
+val WhatsAppGreen = YawarBlue
+val WhatsAppGreenBright = VerifiedBlue
+val WhatsAppPaleGreen = PaleBlue
+val ChatCanvas = Color(0xFFF4F8FD)
 val ChatBubbleIn = Color(0xFFFFFFFF)
-val ChatBubbleOut = Color(0xFFE2F7D9)
+val ChatBubbleOut = Color(0xFFE5F0FF)
 val ChatMeta = Color(0xFF66778A)
 val ChatTickRead = WhatsAppGreenBright
 val ChatSystemBg = WhatsAppPaleGreen
-val ChatSystemBorder = Color(0xFFCDE7D1)
+val ChatSystemBorder = Color(0xFFC9DDF5)
 val ChatSystemText = WhatsAppGreen
-val ChatSystemTextDeep = WhatsAppGreen
-val ChatOnlineDot = WhatsAppGreenBright
+val ChatSystemTextDeep = YawarNavy
+val ChatOnlineDot = VerifiedBlue

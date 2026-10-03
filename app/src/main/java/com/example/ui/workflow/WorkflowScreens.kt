@@ -106,7 +106,11 @@ import com.example.ui.theme.ChatBubbleIn
 import com.example.ui.theme.ChatBubbleOut
 import com.example.ui.theme.ChatCanvas
 import com.example.ui.theme.ChatMeta
+import com.example.ui.theme.PaleBlue
+import com.example.ui.theme.SkySoft
+import com.example.ui.theme.Slate
 import com.example.ui.theme.WhatsAppGreen
+import com.example.ui.theme.YawarNavy
 import com.example.ui.viewmodel.YawarViewModel
 import coil.compose.AsyncImage
 import java.net.URLEncoder
@@ -793,7 +797,7 @@ fun VoiceCallMonitor(viewModel: YawarViewModel) {
         onDismissRequest = { viewModel.rejectIncomingVoiceCall(incoming) },
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(Modifier.fillMaxSize(), color = Color(0xFFF2F8F4)) {
+                Surface(Modifier.fillMaxSize(), color = PaleBlue) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 36.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -802,8 +806,8 @@ fun VoiceCallMonitor(viewModel: YawarViewModel) {
                 Text("INCOMING IN-APP CALL", color = WhatsAppGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     CallPeerAvatar(incoming.peerName, incoming.peerPhotoUrl, 164.dp)
-                    Text(incoming.peerName, fontWeight = FontWeight.Bold, fontSize = 27.sp, color = Color(0xFF17352A))
-                    Text("Calling you over the internet", color = Color(0xFF61756C), fontSize = 15.sp)
+                    Text(incoming.peerName, fontWeight = FontWeight.Bold, fontSize = 27.sp, color = YawarNavy)
+                    Text("Calling you over the internet", color = Slate, fontSize = 15.sp)
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     CallAction(
@@ -843,7 +847,7 @@ fun VoiceCallScreen(viewModel: YawarViewModel, call: com.example.ui.viewmodel.Vo
         call.status == "Connection interrupted" -> "Reconnecting…"
         else -> call.status
     }
-    Surface(Modifier.fillMaxSize(), color = Color(0xFFF2F8F4)) {
+    Surface(Modifier.fillMaxSize(), color = PaleBlue) {
         Column(
             Modifier.fillMaxSize().padding(horizontal = 26.dp, vertical = 34.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -853,29 +857,29 @@ fun VoiceCallScreen(viewModel: YawarViewModel, call: com.example.ui.viewmodel.Vo
                 IconButton(onClick = onMinimize) { Icon(Icons.Default.ArrowBack, contentDescription = "Minimize call", tint = WhatsAppGreen) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("YAWAR INTERNET CALL", color = WhatsAppGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp, letterSpacing = 1.1.sp)
-                    Text("Private voice call", color = Color(0xFF789087), fontSize = 13.sp)
+                    Text("Private voice call", color = Slate, fontSize = 13.sp)
                 }
                 Spacer(Modifier.size(48.dp))
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 CallPeerAvatar(call.peerName, call.peerPhotoUrl, 184.dp)
-                Text(call.peerName, color = Color(0xFF17352A), fontWeight = FontWeight.Bold, fontSize = 28.sp, maxLines = 2)
+                Text(call.peerName, color = YawarNavy, fontWeight = FontWeight.Bold, fontSize = 28.sp, maxLines = 2)
                 Text(status, color = if (call.status.startsWith("Call could not")) MaterialTheme.colorScheme.error else WhatsAppGreen, fontSize = 16.sp)
-                if (call.status == "Connected") Text("Connected over the internet", color = Color(0xFF789087), fontSize = 12.sp)
+                if (call.status == "Connected") Text("Connected over the internet", color = Slate, fontSize = 12.sp)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(30.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                     CallAction(
                         label = if (call.muted) "Unmute" else "Mute",
                         icon = if (call.muted) Icons.Default.MicOff else Icons.Default.Mic,
-                        tint = if (call.muted) Color.White else Color(0xFF2D493D),
+                        tint = if (call.muted) Color.White else YawarNavy,
                         background = if (call.muted) WhatsAppGreen else Color.White,
                         onClick = viewModel::toggleVoiceCallMute
                     )
                     CallAction(
                         label = if (call.speakerOn) "Earpiece" else "Speaker",
                         icon = Icons.Default.VolumeUp,
-                        tint = if (call.speakerOn) Color.White else Color(0xFF2D493D),
+                        tint = if (call.speakerOn) Color.White else YawarNavy,
                         background = if (call.speakerOn) WhatsAppGreen else Color.White,
                         onClick = viewModel::toggleVoiceCallSpeaker
                     )
@@ -885,7 +889,7 @@ fun VoiceCallScreen(viewModel: YawarViewModel, call: com.example.ui.viewmodel.Vo
                     tint = Color.White, background = Color(0xFFD94343), onClick = viewModel::endVoiceCall,
                     buttonSize = 72.dp
                 )
-                Text("Calls use your mobile data or Wi-Fi connection.", color = Color(0xFF789087), fontSize = 12.sp)
+                Text("Calls use your mobile data or Wi-Fi connection.", color = Slate, fontSize = 12.sp)
             }
         }
     }
@@ -896,7 +900,7 @@ private fun CallPeerAvatar(name: String, photoUrl: String, size: androidx.compos
     val initials = if (name.trim().startsWith("YHCS", ignoreCase = true)) "YH" else {
         name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.take(2).joinToString("") { it.take(1).uppercase(Locale.getDefault()) }.ifBlank { "YH" }
     }
-    Surface(shape = CircleShape, color = Color(0xFFDCEFE5), modifier = Modifier.size(size)) {
+    Surface(shape = CircleShape, color = SkySoft, modifier = Modifier.size(size)) {
         Box(contentAlignment = Alignment.Center) {
             Text(initials, color = WhatsAppGreen, fontWeight = FontWeight.Bold, fontSize = (size.value * 0.28f).sp)
             if (photoUrl.startsWith("https://", ignoreCase = true)) {
@@ -925,7 +929,7 @@ private fun CallAction(
             modifier = Modifier.size(buttonSize).clickable(onClick = onClick)) {
             Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(27.dp)) }
         }
-        Text(label, color = Color(0xFF2D493D), fontSize = 12.sp)
+        Text(label, color = YawarNavy, fontSize = 12.sp)
     }
 }
 
