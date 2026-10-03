@@ -4,6 +4,19 @@
 
 # Run and deploy your AI Studio app
 
+## Supabase connection
+
+The Android client includes a Supabase REST boundary configured for project
+`vrdtilzypkizvqganotu`. Keep the project URL, publishable key, and JWKS URL in
+the ignored `.env` file; `.env.example` contains the public project settings.
+Supabase Row Level Security must protect every table.
+
+Never add `SUPABASE_SECRET_KEY` or a service-role key to the Android project,
+Git, or a released APK. Server-only operations belong in the Hostinger backend
+or a Supabase Edge Function. Hostinger remains the source of truth for the
+existing auth, appointments, referrals, and messages while the Realtime and
+Storage migration is completed behind `app/src/main/java/com/example/data/supabase/`.
+
 This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/9d413859-ce46-4aca-9617-302c82885fe2
